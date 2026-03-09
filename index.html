@@ -12,17 +12,17 @@
     .step.active { display: block; }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     
-    /* 網格卡片佈局 (純文字優化) */
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .card { background: #fff; border: 2px solid #e0e0e0; border-radius: 12px; cursor: pointer; transition: all 0.2s; text-align: center; display: flex; align-items: center; justify-content: center; min-height: 80px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     .card .title { padding: 10px; font-size: 15px; font-weight: bold; line-height: 1.4; }
     .card.selected { border-color: #00B900; background-color: #f0fff0; color: #00B900; box-shadow: 0 2px 8px rgba(0,185,0,0.2); }
     
-    /* 時間按鈕佈局 */
     .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 15px; }
-    .time-btn { background: #fff; border: 1px solid #ccc; padding: 12px 0; border-radius: 8px; font-size: 14px; cursor: pointer; text-align: center; transition: 0.2s; }
+    .time-btn { background: #fff; border: 1px solid #ccc; padding: 10px 0; border-radius: 8px; font-size: 14px; cursor: pointer; text-align: center; transition: 0.2s; line-height: 1.3; }
     .time-btn.selected { background: #00B900; color: #fff; border-color: #00B900; }
     .time-btn:disabled { background: #e9e9e9; color: #a0a0a0; border-color: #e9e9e9; cursor: not-allowed; }
+    .time-btn .city-hint { display: block; font-size: 10px; color: #e07000; margin-top: 2px; }
+    .time-btn:disabled .city-hint { color: #b0b0b0; }
     
     input[type="date"] { width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
     
@@ -43,7 +43,7 @@
     const SERVICE_DURATIONS = { '體驗課程': 1, '1對1教學': 1, '下場實戰教學': 5, '果嶺邊實戰教學': 2 };
     
     let bookingData = { location: '', service: '', date: '', time: '', uid: '', name: '' };
-    let bookedSlots = [];
+    let bookedSlots = []; // [{ time: "HH:00", city: "桃園" }, ...]
   </script>
 
   <div id="step1" class="step active">
@@ -81,41 +81,40 @@
   </div>
 
   <script>
-    document.addEventListener("DOMContentLoaded", () => {
-      const dateInput = document.getElementById('datePicker');
-      const today = new Date();
-      // 依據台灣時區校正日期字串
-      const tzOffset = today.getTimezoneOffset() * 60000;
-      const localISOTime = (new Date(today - tzOffset)).toISOString().slice(0, 10);
+    document.addEventListener("DOMContentLoaded", function() {
+      var dateInput = document.getElementById('datePicker');
+      var today = new Date();
+      var tzOffset = today.getTimezoneOffset() * 60000;
+      var localISOTime = (new Date(today - tzOffset)).toISOString().slice(0, 10);
       dateInput.min = localISOTime;
       dateInput.value = localISOTime;
       bookingData.date = dateInput.value;
 
       liff.init({ liffId: MY_LIFF_ID })
-        .then(() => {
+        .then(function() {
           if (!liff.isLoggedIn()) {
             liff.login({ redirectUri: window.location.href });
           }
         })
-        .catch(err => console.error('LIFF Init Error:', err));
+        .catch(function(err) { console.error('LIFF Init Error:', err); });
     });
 
     function goStep(step) {
-      document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.step').forEach(function(el) { el.classList.remove('active'); });
       document.getElementById('step' + step).classList.add('active');
       if (step === 3) fetchAvailableSlots();
     }
 
     function selectLocation(loc, el) {
       bookingData.location = loc;
-      document.querySelectorAll('#step1 .card').forEach(c => c.classList.remove('selected'));
+      document.querySelectorAll('#step1 .card').forEach(function(c) { c.classList.remove('selected'); });
       el.classList.add('selected');
       document.getElementById('btnNext1').disabled = false;
     }
 
     function selectService(srv, el) {
       bookingData.service = srv;
-      document.querySelectorAll('#step2 .card').forEach(c => c.classList.remove('selected'));
+      document.querySelectorAll('#step2 .card').forEach(function(c) { c.classList.remove('selected'); });
       el.classList.add('selected');
       document.getElementById('btnNext2').disabled = false;
       bookingData.time = ''; 
@@ -124,79 +123,109 @@
 
     function selectTime(time, el) {
       bookingData.time = time;
-      document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('selected'));
+      document.querySelectorAll('.time-btn').forEach(function(b) { b.classList.remove('selected'); });
       el.classList.add('selected');
       document.getElementById('btnSubmit').disabled = false;
+    }
+
+    /* 取得使用者選擇地點的縣市（前兩字） */
+    function getMyCity() {
+      return bookingData.location ? bookingData.location.substring(0, 2) : '';
     }
 
     function fetchAvailableSlots() {
       bookingData.date = document.getElementById('datePicker').value;
       bookingData.time = '';
       document.getElementById('btnSubmit').disabled = true;
-      const timeGrid = document.getElementById('timeGrid');
-      const loading = document.getElementById('loading');
+      var timeGrid = document.getElementById('timeGrid');
+      var loading = document.getElementById('loading');
       
       timeGrid.innerHTML = '';
       loading.style.display = 'block';
 
-      fetch(`${MY_GAS_URL}?date=${bookingData.date}`)
-        .then(response => response.json())
-        .then(data => {
+      fetch(MY_GAS_URL + '?date=' + bookingData.date)
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
           bookedSlots = data.bookedSlots || [];
           renderTimeSlots();
         })
-        .catch(err => {
+        .catch(function(err) {
           console.error(err);
           alert('讀取時段失敗，請重試');
         })
-        .finally(() => {
+        .finally(function() {
           loading.style.display = 'none';
         });
     }
 
     function renderTimeSlots() {
-      const timeGrid = document.getElementById('timeGrid');
-      const duration = SERVICE_DURATIONS[bookingData.service] || 1;
+      var timeGrid = document.getElementById('timeGrid');
+      timeGrid.innerHTML = '';
+      var duration = SERVICE_DURATIONS[bookingData.service] || 1;
       
-      const today = new Date();
-      const tzOffset = today.getTimezoneOffset() * 60000;
-      const todayStr = (new Date(today - tzOffset)).toISOString().slice(0, 10);
-      const currentHour = today.getHours();
-      const isToday = (bookingData.date === todayStr);
+      var today = new Date();
+      var tzOffset = today.getTimezoneOffset() * 60000;
+      var todayStr = (new Date(today - tzOffset)).toISOString().slice(0, 10);
+      var currentHour = today.getHours();
+      var isToday = (bookingData.date === todayStr);
 
-      for (let h = 6; h <= 20; h++) {
-        const hh = String(h).padStart(2, '0');
-        const timeStr = `${hh}:00`;
+      for (var h = 6; h <= 20; h++) {
+        var hh = ('0' + h).slice(-2);
+        var timeStr = hh + ':00';
         
-        const btn = document.createElement('button');
+        var btn = document.createElement('button');
         btn.className = 'time-btn';
-        btn.innerText = timeStr;
-        btn.onclick = function() { selectTime(timeStr, this); };
+        btn.type = 'button';
 
-        let isDisabled = false;
+        var isDisabled = false;
+        var conflictCity = '';
 
+        // Rule 1: 今天且已過的時段
         if (isToday && h <= currentHour) isDisabled = true;
+
+        // Rule 2: 耗時超出營業時間
         if (h + duration > 21) isDisabled = true;
 
-        for (let offset = 0; offset < duration; offset++) {
-          const checkH = String(h + offset).padStart(2, '0') + ':00';
-          if (bookedSlots.includes(checkH)) {
-            isDisabled = true;
-            break;
+        // Rule 3: Sliding window 衝堂檢查
+        if (!isDisabled) {
+          for (var offset = 0; offset < duration; offset++) {
+            var checkH = ('0' + (h + offset)).slice(-2) + ':00';
+            for (var s = 0; s < bookedSlots.length; s++) {
+              if (bookedSlots[s].time === checkH) {
+                isDisabled = true;
+                conflictCity = bookedSlots[s].city;
+                break;
+              }
+            }
+            if (isDisabled) break;
           }
         }
 
-        if (isDisabled) btn.disabled = true;
+        // 組裝按鈕內容
+        var btnHTML = timeStr;
+        if (isDisabled && conflictCity) {
+          btnHTML += '<span class="city-hint">教練在' + conflictCity + '</span>';
+        }
+        btn.innerHTML = btnHTML;
+
+        if (isDisabled) {
+          btn.disabled = true;
+        } else {
+          (function(t) {
+            btn.onclick = function() { selectTime(t, this); };
+          })(timeStr);
+        }
+
         timeGrid.appendChild(btn);
       }
     }
 
     function submitBooking() {
-      const btn = document.getElementById('btnSubmit');
+      var btn = document.getElementById('btnSubmit');
       btn.disabled = true;
       btn.innerText = '送出中...';
 
-      liff.getProfile().then(profile => {
+      liff.getProfile().then(function(profile) {
         bookingData.uid = profile.userId;
         bookingData.name = profile.displayName;
         bookingData.action = 'booking';
@@ -207,8 +236,8 @@
           body: JSON.stringify(bookingData)
         });
       })
-      .then(response => response.json())
-      .then(result => {
+      .then(function(response) { return response.json(); })
+      .then(function(result) {
         if (result.status === 'ok') {
           alert('預約已送出！教練確認後將以 LINE 通知您。');
           liff.closeWindow();
@@ -216,7 +245,7 @@
           throw new Error('Server Error');
         }
       })
-      .catch(err => {
+      .catch(function(err) {
         console.error(err);
         alert('送出失敗，請確認網路連線。');
         btn.disabled = false;
