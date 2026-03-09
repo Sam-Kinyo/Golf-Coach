@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>高爾夫教練預約</title>
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 20px; background-color: #f9f9f9; color: #333; }
+    h2 { font-size: 18px; margin-bottom: 15px; text-align: center; }
+    .step { display: none; animation: fadeIn 0.3s; }
+    .step.active { display: block; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    
+    /* 網格卡片佈局 (純文字優化) */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .card { background: #fff; border: 2px solid #e0e0e0; border-radius: 12px; cursor: pointer; transition: all 0.2s; text-align: center; display: flex; align-items: center; justify-content: center; min-height: 80px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .card .title { padding: 10px; font-size: 15px; font-weight: bold; line-height: 1.4; }
+    .card.selected { border-color: #00B900; background-color: #f0fff0; color: #00B900; box-shadow: 0 2px 8px rgba(0,185,0,0.2); }
+    
+    /* 時間按鈕佈局 */
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 15px; }
+    .time-btn { background: #fff; border: 1px solid #ccc; padding: 12px 0; border-radius: 8px; font-size: 14px; cursor: pointer; text-align: center; transition: 0.2s; }
+    .time-btn.selected { background: #00B900; color: #fff; border-color: #00B900; }
+    .time-btn:disabled { background: #e9e9e9; color: #a0a0a0; border-color: #e9e9e9; cursor: not-allowed; }
+    
+    input[type="date"] { width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
+    
+    .action-btn { width: 100%; padding: 15px; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 25px; }
+    .btn-primary { background: #00B900; color: #fff; }
+    .btn-primary:disabled { background: #ccc; cursor: not-allowed; }
+    .btn-secondary { background: #e0e0e0; color: #333; margin-top: 10px; }
+    
+    #loading { display: none; text-align: center; margin-top: 20px; font-size: 14px; color: #666; }
+  </style>
+</head>
+<body>
+
+  <script>
+    const MY_LIFF_ID = '2009368868-R5zXPj93';
+    const MY_GAS_URL = 'https://script.google.com/macros/s/AKfycbxvasNVnM9hwY_pyVMJ7gkQ6PYkzdqZE-GNqAQbT7G1vn5_v9uSqD0fVv3dHTyO1xTi/exec';
+
+    const SERVICE_DURATIONS = { '體驗課程': 1, '1對1教學': 1, '下場實戰教學': 5, '果嶺邊實戰教學': 2 };
+    
+    let bookingData = { location: '', service: '', date: '', time: '', uid: '', name: '' };
+    let bookedSlots = [];
+  </script>
+
+  <div id="step1" class="step active">
+    <h2>📍 請選擇練習場</h2>
+    <div class="grid-2">
+      <div class="card" onclick="selectLocation('桃園良益高爾夫練習場', this)"><div class="title">桃園良益</div></div>
+      <div class="card" onclick="selectLocation('桃園亞洲高爾夫練習場', this)"><div class="title">桃園亞洲</div></div>
+      <div class="card" onclick="selectLocation('桃園清浦高爾夫練習場', this)"><div class="title">桃園清浦</div></div>
+      <div class="card" onclick="selectLocation('新竹東海櫻花高爾夫練習場', this)"><div class="title">新竹東海櫻花</div></div>
+    </div>
+    <button class="action-btn btn-primary" id="btnNext1" disabled onclick="goStep(2)">下一步：選擇課程</button>
+  </div>
+
+  <div id="step2" class="step">
+    <h2>🏌️ 請選擇課程項目</h2>
+    <div class="grid-2">
+      <div class="card" onclick="selectService('體驗課程', this)"><div class="title">體驗課程<br>(1hr)</div></div>
+      <div class="card" onclick="selectService('1對1教學', this)"><div class="title">1對1教學<br>(1hr)</div></div>
+      <div class="card" onclick="selectService('下場實戰教學', this)"><div class="title">下場實戰教學<br>(5hr)</div></div>
+      <div class="card" onclick="selectService('果嶺邊實戰教學', this)"><div class="title">果嶺邊實戰教學<br>(2hr)</div></div>
+    </div>
+    <button class="action-btn btn-primary" id="btnNext2" disabled onclick="goStep(3)">下一步：選擇時間</button>
+    <button class="action-btn btn-secondary" onclick="goStep(1)">返回修改地點</button>
+  </div>
+
+  <div id="step3" class="step">
+    <h2>📅 請選擇日期與時間</h2>
+    <input type="date" id="datePicker" onchange="fetchAvailableSlots()">
+    
+    <div id="loading">讀取時段中，請稍候...</div>
+    <div id="timeGrid" class="grid-4"></div>
+
+    <button class="action-btn btn-primary" id="btnSubmit" disabled onclick="submitBooking()">確認預約</button>
+    <button class="action-btn btn-secondary" onclick="goStep(2)">返回修改課程</button>
+  </div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const dateInput = document.getElementById('datePicker');
+      const today = new Date();
+      // 依據台灣時區校正日期字串
+      const tzOffset = today.getTimezoneOffset() * 60000;
+      const localISOTime = (new Date(today - tzOffset)).toISOString().slice(0, 10);
+      dateInput.min = localISOTime;
+      dateInput.value = localISOTime;
+      bookingData.date = dateInput.value;
+
+      liff.init({ liffId: MY_LIFF_ID })
+        .then(() => {
+          if (!liff.isLoggedIn()) {
+            liff.login({ redirectUri: window.location.href });
+          }
+        })
+        .catch(err => console.error('LIFF Init Error:', err));
+    });
+
+    function goStep(step) {
+      document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
+      document.getElementById('step' + step).classList.add('active');
+      if (step === 3) fetchAvailableSlots();
+    }
+
+    function selectLocation(loc, el) {
+      bookingData.location = loc;
+      document.querySelectorAll('#step1 .card').forEach(c => c.classList.remove('selected'));
+      el.classList.add('selected');
+      document.getElementById('btnNext1').disabled = false;
+    }
+
+    function selectService(srv, el) {
+      bookingData.service = srv;
+      document.querySelectorAll('#step2 .card').forEach(c => c.classList.remove('selected'));
+      el.classList.add('selected');
+      document.getElementById('btnNext2').disabled = false;
+      bookingData.time = ''; 
+      document.getElementById('btnSubmit').disabled = true;
+    }
+
+    function selectTime(time, el) {
+      bookingData.time = time;
+      document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('selected'));
+      el.classList.add('selected');
+      document.getElementById('btnSubmit').disabled = false;
+    }
+
+    function fetchAvailableSlots() {
+      bookingData.date = document.getElementById('datePicker').value;
+      bookingData.time = '';
+      document.getElementById('btnSubmit').disabled = true;
+      const timeGrid = document.getElementById('timeGrid');
+      const loading = document.getElementById('loading');
+      
+      timeGrid.innerHTML = '';
+      loading.style.display = 'block';
+
+      fetch(`${MY_GAS_URL}?date=${bookingData.date}`)
+        .then(response => response.json())
+        .then(data => {
+          bookedSlots = data.bookedSlots || [];
+          renderTimeSlots();
+        })
+        .catch(err => {
+          console.error(err);
+          alert('讀取時段失敗，請重試');
+        })
+        .finally(() => {
+          loading.style.display = 'none';
+        });
+    }
+
+    function renderTimeSlots() {
+      const timeGrid = document.getElementById('timeGrid');
+      const duration = SERVICE_DURATIONS[bookingData.service] || 1;
+      
+      const today = new Date();
+      const tzOffset = today.getTimezoneOffset() * 60000;
+      const todayStr = (new Date(today - tzOffset)).toISOString().slice(0, 10);
+      const currentHour = today.getHours();
+      const isToday = (bookingData.date === todayStr);
+
+      for (let h = 6; h <= 20; h++) {
+        const hh = String(h).padStart(2, '0');
+        const timeStr = `${hh}:00`;
+        
+        const btn = document.createElement('button');
+        btn.className = 'time-btn';
+        btn.innerText = timeStr;
+        btn.onclick = function() { selectTime(timeStr, this); };
+
+        let isDisabled = false;
+
+        if (isToday && h <= currentHour) isDisabled = true;
+        if (h + duration > 21) isDisabled = true;
+
+        for (let offset = 0; offset < duration; offset++) {
+          const checkH = String(h + offset).padStart(2, '0') + ':00';
+          if (bookedSlots.includes(checkH)) {
+            isDisabled = true;
+            break;
+          }
+        }
+
+        if (isDisabled) btn.disabled = true;
+        timeGrid.appendChild(btn);
+      }
+    }
+
+    function submitBooking() {
+      const btn = document.getElementById('btnSubmit');
+      btn.disabled = true;
+      btn.innerText = '送出中...';
+
+      liff.getProfile().then(profile => {
+        bookingData.uid = profile.userId;
+        bookingData.name = profile.displayName;
+        bookingData.action = 'booking';
+
+        return fetch(MY_GAS_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(bookingData)
+        });
+      })
+      .then(response => response.json())
+      .then(result => {
+        if (result.status === 'ok') {
+          alert('預約已送出！教練確認後將以 LINE 通知您。');
+          liff.closeWindow();
+        } else {
+          throw new Error('Server Error');
+        }
+      })
+      .catch(err => {
+        console.error(err);
+        alert('送出失敗，請確認網路連線。');
+        btn.disabled = false;
+        btn.innerText = '確認預約';
+      });
+    }
+  </script>
+</body>
+</html>
