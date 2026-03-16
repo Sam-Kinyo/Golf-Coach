@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <title>學員專區</title>
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script>
+    window.APP_VERSION = '20260312-145735';
+    (function forceLatestVersion() {
+      try {
+        const url = new URL(window.location.href);
+        if (url.searchParams.get('cv') === window.APP_VERSION) return;
+        url.searchParams.set('cv', window.APP_VERSION);
+        window.location.replace(url.toString());
+      } catch (e) {}
+    })();
+    // Android WebView 快取修復（避免「發生不明錯誤」）
+    (function() {
+      const of = window.fetch;
+      if (of) {
+        window.fetch = function(url, opts) {
+          const u = typeof url === 'string' ? url : url.toString();
+          if (u.includes('liffsdk.line-scdn.net') && u.endsWith('.json')) {
+            url = u + (u.includes('?') ? '&' : '?') + 'ts=' + Date.now();
+          }
+          return of.call(this, url, opts);
+        };
+      }
+    })();
+    window.LIFF_ID = '2009368868-p390tnyT';
+    window.API_URL = window.location.origin;
+  </script>
+  <style>
+    body { font-family: -apple-system, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+    .card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    h2 { margin: 0 0 16px 0; font-size: 18px; }
+    button { padding: 12px 20px; border: none; border-radius: 8px; background: #06c755; color: #fff; font-weight: 600; cursor: pointer; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    input, select { padding: 10px; border: 1px solid #ddd; border-radius: 12px; margin: 8px 0; width: 100%; box-sizing: border-box; }
+    .tab { display: inline-block; padding: 10px 20px; margin-right: 8px; cursor: pointer; border-radius: 8px; }
+    .tab.active { background: #06c755; color: #fff; }
+    .hidden { display: none; }
+    .pkg-item, .booking-item { padding: 12px; margin: 8px 0; background: #f9f9f9; border-radius: 8px; }
+    .booking-filter { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+    .booking-filter-btn { border: 1px solid #d8d8d8; background: #fff; color: #333; padding: 6px 12px; border-radius: 999px; font-size: 13px; }
+    .booking-filter-btn.active { background: #06c755; color: #fff; border-color: #06c755; }
+    .booking-section-title { margin: 12px 0 6px 0; font-size: 14px; color: #555; font-weight: 700; }
+    .booking-section-header { display: flex; align-items: center; justify-content: space-between; margin: 12px 0 6px 0; }
+    .booking-toggle-btn { border: 1px solid #d8d8d8; background: #fff; color: #333; padding: 4px 10px; border-radius: 999px; font-size: 12px; }
+    .booking-section-content.hidden { display: none; }
+    .total-credits { font-size: 20px; font-weight: 700; color: #06c755; margin: 12px 0; }
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 20px;
+      transform: translateX(-50%) translateY(20px);
+      min-width: 220px;
+      max-width: calc(100vw - 40px);
+      background: rgba(33, 33, 33, 0.95);
+      color: #fff;
+      padding: 12px 14px;
+      border-radius: 10px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+      font-size: 14px;
+      line-height: 1.4;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      z-index: 9999;
+      text-align: center;
+      white-space: pre-line;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.success { background: rgba(6, 130, 60, 0.95); }
+    .toast.error { background: rgba(180, 40, 40, 0.95); }
+  </style>
+</head>
+<body>
+  <div id="loading">載入中...</div>
+  <div id="app" class="hidden">
+    <div class="tabs">
+      <span class="tab active" data-tab="credits">我的堂數</span>
+      <span class="tab" data-tab="bookings">我的預約</span>
+      <span class="tab" data-tab="new">預約課程</span>
+    </div>
+
+    <div id="credits" class="card">
+      <h2>我的堂數</h2>
+      <div id="packageList"></div>
+      <div class="total-credits" id="totalCredits"></div>
+    </div>
+
+    <div id="bookings" class="card hidden">
+      <h2>我的預約</h2>
+      <div id="bookingFilter" class="booking-filter">
+        <button type="button" class="booking-filter-btn active" data-filter="all">全部</button>
+        <button type="button" class="booking-filter-btn" data-filter="approved">已確認</button>
+        <button type="button" class="booking-filter-btn" data-filter="pending">待確認</button>
+        <button type="button" class="booking-filter-btn" data-filter="rejected">已拒絕</button>
+      </div>
+      <div id="bookingList"></div>
+    </div>
+
+    <div id="new" class="card hidden">
+      <h2>預約課程</h2>
+      <select id="locationSelect"><option value="">請選擇地點</option></select>
+      <select id="serviceSelect"><option value="">請選擇課程</option></select>
+      <select id="bookingDate"><option value="">選擇日期</option></select>
+      <select id="timeSelect"><option value="">選擇時段</option></select>
+      <button id="btnBook">送出預約</button>
+    </div>
+  </div>
+  <div id="toast" class="toast"></div>
+
+  <script>
+    const API_URL = window.API_URL || window.location.origin || 'http://localhost:8080';
+    let userId = '';
+    let currentDisplayName = '';
+    let locations = [];
+    let services = [];
+    let toastTimer = null;
+    let bookingItems = [];
+    let bookingFilter = 'all';
+    let bookingSectionCollapsed = {
+      approved: true,
+      pending: true,
+      rejected: true,
+      others: true,
+    };
+
+    function showToast(message, type = 'info', duration = 2200) {
+      const toast = document.getElementById('toast');
+      if (!toast) return;
+      toast.textContent = message;
+      toast.className = `toast ${type}`;
+      requestAnimationFrame(() => toast.classList.add('show'));
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toast.classList.remove('show');
+      }, duration);
+    }
+
+    async function init() {
+      try {
+        await liff.init({ liffId: window.LIFF_ID });
+        if (!liff.isLoggedIn()) {
+          liff.login({ redirectUri: window.location.href });
+          return;
+        }
+        const profile = await liff.getProfile();
+        userId = profile.userId;
+        currentDisplayName = profile.displayName || '';
+        await fetch(`${API_URL}/api/liff/me?userId=${encodeURIComponent(userId)}&displayName=${encodeURIComponent(currentDisplayName)}`);
+        document.getElementById('loading').classList.add('hidden');
+        document.getElementById('app').classList.remove('hidden');
+        await loadBookingOptions();
+        loadPackages();
+        loadBookings();
+        bindEvents();
+      } catch (err) {
+        document.getElementById('loading').innerHTML =
+          '<p style="color:#c00;">載入失敗：' + (err.message || err) + '</p>' +
+          '<p>請確認：<br>1. 從 LINE 內點擊連結開啟<br>2. LIFF Endpoint URL 已設為<br>https://golf-coach-aebcd.web.app/student/index.html</p>';
+      }
+    }
+
+    async function loadBookingOptions() {
+      const res = await fetch(`${API_URL}/api/liff/booking-options`);
+      const { locations: locs, services: svcs } = await res.json();
+      locations = locs;
+      services = svcs;
+      const locSel = document.getElementById('locationSelect');
+      const svcSel = document.getElementById('serviceSelect');
+      const dateSel = document.getElementById('bookingDate');
+      const timeSel = document.getElementById('timeSelect');
+      locSel.innerHTML = '<option value="">請選擇地點</option>' + locs.map(l => `<option value="${l}">${l}</option>`).join('');
+      svcSel.innerHTML = '<option value="">請選擇課程</option>' + svcs.map(s => `<option value="${s}">${s}</option>`).join('');
+      const dateOptions = ['<option value="">選擇日期</option>'];
+      const base = new Date();
+      for (let i = 0; i < 90; i++) {
+        const d = new Date(base);
+        d.setDate(base.getDate() + i);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const date = `${y}-${m}-${day}`;
+        dateOptions.push(`<option value="${date}">${date}</option>`);
+      }
+      dateSel.innerHTML = dateOptions.join('');
+      timeSel.innerHTML = '<option value="">選擇時段</option>';
+    }
+
+    async function loadPackages() {
+      const res = await fetch(`${API_URL}/api/liff/my-packages?userId=${userId}`);
+      const { packages } = await res.json();
+      const div = document.getElementById('packageList');
+      const totalDiv = document.getElementById('totalCredits');
+      if (!packages || packages.length === 0) {
+        div.innerHTML = '<p>您目前沒有可用的儲值課程包。</p>';
+        totalDiv.textContent = '';
+      } else {
+        let total = 0;
+        div.innerHTML = packages.map(p => {
+          total += p.remainingCredits;
+          return `<div class="pkg-item"><strong>${p.title}</strong><br>剩餘：${p.remainingCredits} / ${p.totalCredits} 堂${p.validTo ? ` · 到期：${p.validTo}` : ''}</div>`;
+        }).join('');
+        totalDiv.textContent = `🎯 總剩餘：${total} 堂`;
+      }
+    }
+
+    function renderBookings() {
+      const div = document.getElementById('bookingList');
+      if (!bookingItems || bookingItems.length === 0) {
+        div.innerHTML = '<p>您目前沒有預約紀錄。</p>';
+        return;
+      }
+      const statusMap = {
+        pending: '待確認',
+        approved: '已確認',
+        rejected: '已拒絕（請改約）',
+        cancelled: '已取消',
+        completed: '已完成',
+      };
+      const renderCard = (b) => {
+        const statusText = statusMap[b.status] || b.status;
+        return `<div class="booking-item"><strong>${b.bookingDate} ${b.startTime}</strong><br>📍 ${b.location} / ${b.service}<br>📌 ${statusText}</div>`;
+      };
+      const renderSection = (key, title, items) => {
+        if (!items.length) return '';
+        const collapsed = !!bookingSectionCollapsed[key];
+        const btnText = collapsed ? '展開' : '收合';
+        return `
+          <div class="booking-section" data-section="${key}">
+            <div class="booking-section-header">
+              <div class="booking-section-title">${title}（${items.length}）</div>
+              <button type="button" class="booking-toggle-btn" data-section="${key}">${btnText}</button>
+            </div>
+            <div class="booking-section-content${collapsed ? ' hidden' : ''}" data-section="${key}">
+              ${items.map(renderCard).join('')}
+            </div>
+          </div>
+        `;
+      };
+      if (bookingFilter !== 'all') {
+        const filtered = bookingItems.filter((b) => {
+          if (bookingFilter === 'rejected') return b.status === 'rejected' || b.status === 'cancelled';
+          return b.status === bookingFilter;
+        });
+        div.innerHTML = filtered.length ? filtered.map(renderCard).join('') : '<p>此篩選條件下沒有資料。</p>';
+        return;
+      }
+      const approved = bookingItems.filter((b) => b.status === 'approved');
+      const pending = bookingItems.filter((b) => b.status === 'pending');
+      const rejected = bookingItems.filter((b) => b.status === 'rejected' || b.status === 'cancelled');
+      const others = bookingItems.filter((b) => !['approved', 'pending', 'rejected', 'cancelled'].includes(b.status));
+      const sections = [];
+      sections.push(renderSection('approved', '已確認', approved));
+      sections.push(renderSection('pending', '待確認', pending));
+      sections.push(renderSection('rejected', '已拒絕／已取消', rejected));
+      sections.push(renderSection('others', '其他狀態', others));
+      div.innerHTML = sections.join('');
+    }
+
+    async function loadBookings() {
+      const res = await fetch(`${API_URL}/api/liff/my-bookings?userId=${userId}`);
+      const { bookings } = await res.json();
+      bookingItems = Array.isArray(bookings) ? bookings : [];
+      renderBookings();
+    }
+
+    async function loadAvailableSlots() {
+      const date = document.getElementById('bookingDate').value;
+      if (!date) {
+        const sel = document.getElementById('timeSelect');
+        sel.innerHTML = '<option value="">選擇時段</option>';
+        return;
+      }
+      const service = document.getElementById('serviceSelect').value;
+      const res = await fetch(`${API_URL}/api/liff/available-slots?date=${encodeURIComponent(date)}&service=${encodeURIComponent(service || '')}`);
+      const data = await res.json();
+      const { slots, slotStatus, error } = data || {};
+      const sel = document.getElementById('timeSelect');
+      if (!res.ok || error) {
+        sel.innerHTML = '<option value="">時段載入失敗，請重試</option>';
+        return;
+      }
+      const formatSlotLabel = (time) => {
+        const h = parseInt((time || '00:00').split(':')[0], 10);
+        const next = String(h + 1).padStart(2, '0') + ':00';
+        return `${time}-${next}`;
+      };
+      const statuses = Array.isArray(slotStatus) ? slotStatus : (slots || []).map(s => ({ time: s, available: true }));
+      const options = statuses.map(s => {
+        const label = formatSlotLabel(s.time);
+        if (s.available) return `<option value="${s.time}">${label}</option>`;
+        if (s.reason === 'booked') return `<option value="${s.time}" disabled>${label}（教練於${s.location || '其他地點'}上課中）</option>`;
+        if (s.reason === 'outside_hours') return `<option value="${s.time}" disabled>${label}（超出課程可預約時段）</option>`;
+        return `<option value="${s.time}" disabled>${label}（教練休假）</option>`;
+      });
+      sel.innerHTML = '<option value="">選擇時段</option>' + options.join('');
+    }
+
+    function bindEvents() {
+      document.querySelectorAll('.tab').forEach(t => {
+        t.addEventListener('click', () => {
+          document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+          document.querySelectorAll('#credits, #bookings, #new').forEach(x => x.classList.add('hidden'));
+          t.classList.add('active');
+          document.getElementById(t.dataset.tab).classList.remove('hidden');
+          if (t.dataset.tab === 'new') loadAvailableSlots();
+        });
+      });
+
+      document.getElementById('bookingDate').addEventListener('change', loadAvailableSlots);
+      document.getElementById('serviceSelect').addEventListener('change', loadAvailableSlots);
+      document.querySelectorAll('#bookingFilter .booking-filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          bookingFilter = btn.dataset.filter || 'all';
+          document.querySelectorAll('#bookingFilter .booking-filter-btn').forEach(x => x.classList.remove('active'));
+          btn.classList.add('active');
+          renderBookings();
+        });
+      });
+      document.getElementById('bookingList').addEventListener('click', (e) => {
+        const target = e.target;
+        if (!(target instanceof HTMLElement)) return;
+        if (!target.classList.contains('booking-toggle-btn')) return;
+        const key = target.dataset.section;
+        if (!key) return;
+        bookingSectionCollapsed[key] = !bookingSectionCollapsed[key];
+        renderBookings();
+      });
+
+      function closeWindowAfterSuccess() {
+        if (!window.liff || !liff.isInClient()) return;
+        setTimeout(() => {
+          try {
+            liff.closeWindow();
+          } catch (e) {
+            console.warn('closeWindow failed', e);
+          }
+        }, 1200);
+      }
+
+      document.getElementById('btnBook').addEventListener('click', async () => {
+        const location = document.getElementById('locationSelect').value;
+        const service = document.getElementById('serviceSelect').value;
+        const bookingDate = document.getElementById('bookingDate').value;
+        const startTime = document.getElementById('timeSelect').value;
+        if (!location || !service || !bookingDate || !startTime) {
+          showToast('請填寫完整預約資訊', 'error');
+          return;
+        }
+        try {
+          const res = await fetch(`${API_URL}/api/liff/create-booking`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, bookingDate, startTime, location, service }),
+          });
+          const data = await res.json();
+          if (data.ok) {
+            showToast('預約已送出，待教練確認\n即將自動關閉視窗，並於 LINE 顯示確認訊息。', 'success', 2600);
+            loadBookings();
+            closeWindowAfterSuccess();
+          } else {
+            showToast(data.error || '預約失敗', 'error');
+          }
+        } catch (e) {
+          showToast('請確認網路連線', 'error');
+        }
+      });
+    }
+
+    init();
+  </script>
+</body>
+</html>

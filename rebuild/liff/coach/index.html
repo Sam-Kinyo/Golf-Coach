@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <title>高爾夫預約</title>
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script>
+    window.APP_VERSION = '20260312-145735';
+    (function forceLatestVersion() {
+      try {
+        const url = new URL(window.location.href);
+        if (url.searchParams.get('cv') === window.APP_VERSION) return;
+        url.searchParams.set('cv', window.APP_VERSION);
+        window.location.replace(url.toString());
+      } catch (e) {}
+    })();
+    (function() {
+      const of = window.fetch;
+      if (of) {
+        window.fetch = function(url, opts) {
+          const u = typeof url === 'string' ? url : url.toString();
+          if (u.includes('liffsdk.line-scdn.net') && u.endsWith('.json')) {
+            url = u + (u.includes('?') ? '&' : '?') + 'ts=' + Date.now();
+          }
+          return of.call(this, url, opts);
+        };
+      }
+    })();
+    window.LIFF_ID = '2009368868-R5zXPj93';
+    window.API_URL = window.location.origin;
+  </script>
+  <style>
+    body { font-family: -apple-system, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+    .card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    h2 { margin: 0 0 16px 0; font-size: 18px; }
+    button { padding: 12px 20px; border: none; border-radius: 8px; background: #06c755; color: #fff; font-weight: 600; cursor: pointer; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    input, select { padding: 10px; border: 1px solid #ddd; border-radius: 12px; margin: 8px 0; width: 100%; box-sizing: border-box; }
+    .tab { display: inline-block; padding: 10px 20px; margin-right: 8px; cursor: pointer; border-radius: 8px; }
+    .tab.active { background: #06c755; color: #fff; }
+    .hidden { display: none; }
+    .pkg-item, .booking-item { padding: 12px; margin: 8px 0; background: #f9f9f9; border-radius: 8px; }
+    .booking-filter { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+    .booking-filter-btn { border: 1px solid #d8d8d8; background: #fff; color: #333; padding: 6px 12px; border-radius: 999px; font-size: 13px; }
+    .booking-filter-btn.active { background: #06c755; color: #fff; border-color: #06c755; }
+    .booking-section-title { margin: 12px 0 6px 0; font-size: 14px; color: #555; font-weight: 700; }
+    .booking-section-header { display: flex; align-items: center; justify-content: space-between; margin: 12px 0 6px 0; }
+    .booking-toggle-btn { border: 1px solid #d8d8d8; background: #fff; color: #333; padding: 4px 10px; border-radius: 999px; font-size: 12px; }
+    .booking-section-content.hidden { display: none; }
+    .total-credits { font-size: 20px; font-weight: 700; color: #06c755; margin: 12px 0; }
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 20px;
+      transform: translateX(-50%) translateY(20px);
+      min-width: 220px;
+      max-width: calc(100vw - 40px);
+      background: rgba(33, 33, 33, 0.95);
+      color: #fff;
+      padding: 12px 14px;
+      border-radius: 10px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+      font-size: 14px;
+      line-height: 1.4;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      z-index: 9999;
+      text-align: center;
+      white-space: pre-line;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.success { background: rgba(6, 130, 60, 0.95); }
+    .toast.error { background: rgba(180, 40, 40, 0.95); }
+    .student-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+    .student-filter-group { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .student-search { width: 220px; max-width: 100%; margin: 0; padding: 8px 10px; }
+    .student-toggle { font-size: 13px; color: #555; display: inline-flex; align-items: center; gap: 6px; }
+    .student-toggle input { margin: 0; width: auto; }
+    .btn-secondary { background: #fff; color: #333; border: 1px solid #ddd; padding: 8px 12px; border-radius: 999px; font-weight: 600; }
+    .student-card { border: 1px solid #ececec; border-radius: 12px; padding: 10px 12px; margin: 8px 0; background: #fafafa; }
+    .student-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+    .student-name { font-size: 15px; font-weight: 700; color: #222; }
+    .student-sub { font-size: 12px; color: #777; }
+    .student-total { font-size: 13px; font-weight: 700; color: #06c755; white-space: nowrap; }
+    .pkg-line { margin: 6px 0; padding: 8px 10px; background: #fff; border-radius: 10px; border: 1px solid #efefef; font-size: 13px; }
+    .pkg-title { font-weight: 700; color: #333; }
+    .pkg-meta { color: #666; margin-top: 2px; }
+    .muted { color: #888; font-size: 13px; }
+    .field-hint { margin: 10px 0 2px 2px; font-size: 13px; color: #666; font-weight: 600; }
+    .schedule-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; align-items: center; }
+    .schedule-toolbar input { width: auto; flex: 1; min-width: 130px; margin: 0; }
+    .schedule-item { border: 1px solid #ececec; border-radius: 10px; padding: 10px; margin: 8px 0; background: #fafafa; }
+    .schedule-date-title { margin: 14px 0 6px 0; font-size: 14px; color: #555; font-weight: 700; }
+    .fixed-box { margin-top: 14px; border-top: 1px dashed #ddd; padding-top: 12px; }
+    .fixed-title { font-size: 14px; font-weight: 700; margin-bottom: 8px; color: #333; }
+    .fixed-form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .fixed-form input, .fixed-form select { margin: 0; }
+    .fixed-actions { margin-top: 8px; display: flex; justify-content: flex-end; }
+    .fixed-item { border: 1px solid #e8ecef; background: #f8fafb; border-radius: 10px; padding: 8px 10px; margin: 8px 0; }
+    .fixed-item-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .btn-danger { background: #fff; color: #b83838; border: 1px solid #efb9b9; padding: 4px 10px; border-radius: 999px; }
+  </style>
+</head>
+<body>
+  <div id="loading">載入中...</div>
+  <div id="coachApp" class="hidden">
+    <div class="tabs">
+      <span class="tab active" data-tab="credit">扣課/加課</span>
+      <span class="tab" data-tab="students">學員明細</span>
+      <span class="tab" data-tab="schedule">上課時間</span>
+      <span class="tab" data-tab="leave">休假設定</span>
+    </div>
+    <div id="credit" class="card">
+      <h2>扣課 / 加課</h2>
+      <select id="studentSelect"><option value="">請選擇學員</option></select>
+      <input type="number" id="creditAmount" placeholder="堂數（正數加課、負數扣課）">
+      <input type="text" id="creditRealName" placeholder="本名（加課時填，用於核銷）">
+      <input type="date" id="creditStartDate" placeholder="起始日期">
+      <input type="number" id="creditPrice" placeholder="金額（選填，NT$）">
+      <input type="text" id="creditNote" placeholder="備註（方案名稱，選填）">
+      <button id="btnCredit">送出</button>
+    </div>
+    <div id="students" class="card hidden">
+      <h2>學員明細</h2>
+      <div class="student-toolbar">
+        <div class="student-filter-group">
+          <input id="studentSearch" class="student-search" type="text" placeholder="搜尋學員（姓名 / ID）">
+          <label class="student-toggle"><input type="checkbox" id="onlyRemaining">只看有剩餘堂數</label>
+        </div>
+        <button type="button" id="btnReloadStudents" class="btn-secondary">重新整理</button>
+      </div>
+      <div id="studentList"></div>
+    </div>
+    <div id="schedule" class="card hidden">
+      <h2>上課時間</h2>
+      <p class="muted">預設顯示未來三天預約，可自訂日期區間查詢。</p>
+      <div class="schedule-toolbar">
+        <input type="date" id="scheduleFrom">
+        <input type="date" id="scheduleTo">
+        <button type="button" id="btnSearchSchedule" class="btn-secondary">查詢區間</button>
+      </div>
+      <div id="scheduleList"></div>
+      <div class="fixed-box">
+        <div class="fixed-title">固定上課時間</div>
+        <div class="fixed-form">
+          <select id="fixedWeekday">
+            <option value="1">每週一</option>
+            <option value="2">每週二</option>
+            <option value="3">每週三</option>
+            <option value="4">每週四</option>
+            <option value="5">每週五</option>
+            <option value="6">每週六</option>
+            <option value="0">每週日</option>
+          </select>
+          <select id="fixedStartTime"><option value="">開始時間</option></select>
+          <select id="fixedLocation"><option value="">地點</option></select>
+          <select id="fixedService"><option value="">課程</option></select>
+          <input id="fixedNote" type="text" placeholder="備註（選填）" style="grid-column: 1 / span 2;">
+        </div>
+        <div class="fixed-actions">
+          <button type="button" id="btnAddFixed" class="btn-secondary">新增固定班</button>
+        </div>
+        <div id="fixedScheduleList"></div>
+      </div>
+    </div>
+    <div id="leave" class="card hidden">
+      <h2>休假設定</h2>
+      <div class="field-hint">開始日期時間</div>
+      <input type="datetime-local" id="leaveStartAt" placeholder="開始日期時間">
+      <div class="field-hint">結束日期時間</div>
+      <input type="datetime-local" id="leaveEndAt" placeholder="結束日期時間">
+      <div class="field-hint">備註（選填）</div>
+      <input type="text" id="leaveNote" placeholder="備註（選填）">
+      <button id="btnLeave">新增休假</button>
+      <div class="field-hint">本月休假時間（已過時間會排在最下面）</div>
+      <div id="leaveList"></div>
+    </div>
+  </div>
+  <div id="studentApp" class="hidden">
+    <div class="tabs">
+      <span class="tab active" data-tab="credits">我的堂數</span>
+      <span class="tab" data-tab="bookings">我的預約</span>
+      <span class="tab" data-tab="new">預約課程</span>
+    </div>
+    <div id="credits" class="card">
+      <h2>我的堂數</h2>
+      <div id="packageList"></div>
+      <div class="total-credits" id="totalCredits"></div>
+    </div>
+    <div id="bookings" class="card hidden">
+      <h2>我的預約</h2>
+      <div id="bookingFilter" class="booking-filter">
+        <button type="button" class="booking-filter-btn active" data-filter="all">全部</button>
+        <button type="button" class="booking-filter-btn" data-filter="approved">已確認</button>
+        <button type="button" class="booking-filter-btn" data-filter="pending">待確認</button>
+        <button type="button" class="booking-filter-btn" data-filter="rejected">已拒絕</button>
+      </div>
+      <div id="bookingList"></div>
+    </div>
+    <div id="new" class="card hidden">
+      <h2>預約課程</h2>
+      <select id="locationSelect"><option value="">請選擇地點</option></select>
+      <select id="serviceSelect"><option value="">請選擇課程</option></select>
+      <select id="bookingDate"><option value="">選擇日期</option></select>
+      <select id="timeSelect"><option value="">選擇時段</option></select>
+      <button id="btnBook">送出預約</button>
+    </div>
+  </div>
+  <div id="toast" class="toast"></div>
+
+  <script>
+    const API_URL = window.API_URL || window.location.origin || 'http://localhost:8080';
+    let userId = '';
+    let isCoachUser = false;
+    let currentDisplayName = '';
+    let toastTimer = null;
+    let bookingItems = [];
+    let bookingFilter = 'all';
+    let coachStudentDetails = [];
+    let studentSearchKeyword = '';
+    let onlyWithRemaining = false;
+    let fixedSchedules = [];
+    let bookingSectionCollapsed = {
+      approved: true,
+      pending: true,
+      rejected: true,
+      others: true,
+    };
+
+    function getDateInTaipei(offsetDays = 0) {
+      const date = new Date();
+      date.setDate(date.getDate() + offsetDays);
+      const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Taipei',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      });
+      return formatter.format(date);
+    }
+
+    function showToast(message, type = 'info', duration = 2200) {
+      const toast = document.getElementById('toast');
+      if (!toast) return;
+      toast.textContent = message;
+      toast.className = `toast ${type}`;
+      requestAnimationFrame(() => toast.classList.add('show'));
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toast.classList.remove('show');
+      }, duration);
+    }
+
+    async function init() {
+      try {
+        await liff.init({ liffId: window.LIFF_ID });
+        if (!liff.isLoggedIn()) {
+          liff.login({ redirectUri: window.location.href });
+          return;
+        }
+        const profile = await liff.getProfile();
+        userId = profile.userId;
+        currentDisplayName = profile.displayName || '';
+        const meRes = await fetch(`${API_URL}/api/liff/me?userId=${encodeURIComponent(userId)}&displayName=${encodeURIComponent(currentDisplayName)}`);
+        const { role } = await meRes.json();
+        isCoachUser = role === 'coach';
+
+        document.getElementById('loading').classList.add('hidden');
+        if (isCoachUser) {
+          document.getElementById('coachApp').classList.remove('hidden');
+          loadStudents();
+          await initFixedScheduleOptions();
+          loadFixedSchedules();
+          initScheduleDateRange();
+          loadCoachSchedule();
+          initLeaveDateTime();
+          loadLeaves();
+          bindCoachEvents();
+        } else {
+          document.getElementById('studentApp').classList.remove('hidden');
+          await loadBookingOptions();
+          loadPackages();
+          loadBookings();
+          bindStudentEvents();
+        }
+      } catch (err) {
+        document.getElementById('loading').innerHTML =
+          '<p style="color:#c00;">載入失敗：' + (err.message || err) + '</p>';
+      }
+    }
+
+    function renderStudentDetails() {
+      const listDiv = document.getElementById('studentList');
+      if (!coachStudentDetails.length) {
+        listDiv.innerHTML = '<p class="muted">目前沒有學員資料。</p>';
+        return;
+      }
+      const filtered = coachStudentDetails.filter((s) => {
+        if (onlyWithRemaining && s.totalRemaining <= 0) return false;
+        if (!studentSearchKeyword) return true;
+        const key = studentSearchKeyword.toLowerCase();
+        return s.label.toLowerCase().includes(key) || s.lineUserId.toLowerCase().includes(key);
+      });
+      if (!filtered.length) {
+        listDiv.innerHTML = '<p class="muted">無符合篩選條件的學員。</p>';
+        return;
+      }
+      listDiv.innerHTML = filtered.map((s) => {
+        const pkgHtml = s.packages.length
+          ? s.packages.map((p) => {
+              const validText = p.validTo ? `到期：${p.validTo}` : '到期：無';
+              return `<div class="pkg-line"><div class="pkg-title">${p.title || '未命名方案'}</div><div class="pkg-meta">剩餘 ${p.remainingCredits} / ${p.totalCredits} 堂 · ${validText}</div></div>`;
+            }).join('')
+          : `<p class="muted">${s.loadError ? '課程資料載入失敗' : '目前沒有可用課程包'}</p>`;
+        return `
+          <div class="student-card">
+            <div class="student-head">
+              <div>
+                <div class="student-name">${s.label}</div>
+                <div class="student-sub">${s.lineUserId.slice(0, 8)}...</div>
+              </div>
+              <div class="student-total">總剩餘：${s.totalRemaining} 堂</div>
+            </div>
+            ${pkgHtml}
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function loadStudents() {
+      const listDiv = document.getElementById('studentList');
+      const sel = document.getElementById('studentSelect');
+      listDiv.innerHTML = '<p class="muted">載入學員資料中...</p>';
+      try {
+        const res = await fetch(`${API_URL}/api/liff/students?userId=${userId}`);
+        const { students } = await res.json();
+        sel.innerHTML = '<option value="">請選擇學員</option>';
+        const rows = (students || []).map(s => {
+          const label = s.alias || s.displayName || s.lineUserId;
+          const opt = document.createElement('option');
+          opt.value = s.lineUserId;
+          opt.textContent = `${label} (${s.lineUserId.slice(0, 8)}...)`;
+          sel.appendChild(opt);
+          return {
+            lineUserId: s.lineUserId,
+            label,
+          };
+        });
+        if (!rows.length) {
+          coachStudentDetails = [];
+          renderStudentDetails();
+          return;
+        }
+        const details = await Promise.all(rows.map(async (s) => {
+          try {
+            const pkgRes = await fetch(`${API_URL}/api/liff/student-packages?userId=${encodeURIComponent(userId)}&targetUserId=${encodeURIComponent(s.lineUserId)}`);
+            const pkgData = await pkgRes.json();
+            const packages = Array.isArray(pkgData.packages) ? pkgData.packages : [];
+            const totalRemaining = packages.reduce((sum, p) => sum + (Number(p.remainingCredits) || 0), 0);
+            return { ...s, packages, totalRemaining };
+          } catch (_) {
+            return { ...s, packages: [], totalRemaining: 0, loadError: true };
+          }
+        }));
+        details.sort((a, b) => {
+          if (b.totalRemaining !== a.totalRemaining) return b.totalRemaining - a.totalRemaining;
+          return a.label.localeCompare(b.label);
+        });
+        coachStudentDetails = details;
+        renderStudentDetails();
+      } catch (e) {
+        listDiv.innerHTML = '<p class="muted">學員明細載入失敗，請稍後再試。</p>';
+      }
+    }
+
+    function initScheduleDateRange() {
+      const fromInput = document.getElementById('scheduleFrom');
+      const toInput = document.getElementById('scheduleTo');
+      if (!fromInput || !toInput) return;
+      fromInput.value = getDateInTaipei(0);
+      toInput.value = getDateInTaipei(2);
+    }
+
+    async function loadCoachSchedule() {
+      const from = document.getElementById('scheduleFrom').value || getDateInTaipei(0);
+      const to = document.getElementById('scheduleTo').value || getDateInTaipei(2);
+      const listDiv = document.getElementById('scheduleList');
+      listDiv.innerHTML = '<p class="muted">載入上課清單中...</p>';
+      try {
+        const res = await fetch(`${API_URL}/api/liff/coach-schedule?userId=${encodeURIComponent(userId)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          listDiv.innerHTML = `<p class="muted">${data.error || '查詢失敗，請稍後再試。'}</p>`;
+          return;
+        }
+        const bookings = Array.isArray(data.bookings) ? data.bookings : [];
+        if (!bookings.length) {
+          listDiv.innerHTML = '<p class="muted">此日期區間沒有預約課程。</p>';
+          return;
+        }
+        const statusText = {
+          pending: '待確認',
+          approved: '已確認',
+          completed: '已完成',
+          cancelled: '已取消',
+          rejected: '已拒絕',
+          fixed: '固定班',
+        };
+        const grouped = bookings.reduce((acc, b) => {
+          if (!acc[b.bookingDate]) acc[b.bookingDate] = [];
+          acc[b.bookingDate].push(b);
+          return acc;
+        }, {});
+        const dates = Object.keys(grouped).sort();
+        listDiv.innerHTML = dates.map((date) => {
+          const items = grouped[date]
+            .sort((a, b) => a.startTime.localeCompare(b.startTime))
+            .map((b) => `<div class="schedule-item"><strong>${b.startTime}</strong>｜${b.studentName}<br>📍 ${b.location} / ${b.service}<br>📌 ${statusText[b.status] || b.status}</div>`)
+            .join('');
+          return `<div class="schedule-date-title">${date}（${grouped[date].length} 筆）</div>${items}`;
+        }).join('');
+      } catch (e) {
+        listDiv.innerHTML = '<p class="muted">查詢失敗，請確認網路連線。</p>';
+      }
+    }
+
+    async function initFixedScheduleOptions() {
+      try {
+        const res = await fetch(`${API_URL}/api/liff/booking-options`);
+        const data = await res.json();
+        const locSel = document.getElementById('fixedLocation');
+        const svcSel = document.getElementById('fixedService');
+        const timeSel = document.getElementById('fixedStartTime');
+        const locs = Array.isArray(data.locations) ? data.locations : [];
+        const svcs = Array.isArray(data.services) ? data.services : [];
+        const slots = Array.isArray(data.timeSlots) ? data.timeSlots : [];
+        locSel.innerHTML = '<option value="">地點</option>' + locs.map(l => `<option value="${l}">${l}</option>`).join('');
+        svcSel.innerHTML = '<option value="">課程</option>' + svcs.map(s => `<option value="${s}">${s}</option>`).join('');
+        timeSel.innerHTML = '<option value="">開始時間</option>' + slots.map(t => `<option value="${t}">${t}</option>`).join('');
+      } catch (e) {
+        showToast('固定班表選項載入失敗', 'error');
+      }
+    }
+
+    function renderFixedSchedules() {
+      const div = document.getElementById('fixedScheduleList');
+      const weekdayText = ['每週日', '每週一', '每週二', '每週三', '每週四', '每週五', '每週六'];
+      if (!fixedSchedules.length) {
+        div.innerHTML = '<p class="muted">尚未設定固定上課時間。</p>';
+        return;
+      }
+      div.innerHTML = fixedSchedules.map((s) => `
+        <div class="fixed-item">
+          <div class="fixed-item-top">
+            <strong>${weekdayText[s.weekday] || '每週?' } ${s.startTime}</strong>
+            <button type="button" class="btn-danger" data-fixed-delete="${s.id}">刪除</button>
+          </div>
+          <div class="pkg-meta">📍 ${s.location} / ${s.service}${s.note ? ` · ${s.note}` : ''}</div>
+        </div>
+      `).join('');
+    }
+
+    async function loadFixedSchedules() {
+      try {
+        const res = await fetch(`${API_URL}/api/liff/fixed-schedules?userId=${encodeURIComponent(userId)}`);
+        const data = await res.json();
+        fixedSchedules = Array.isArray(data.schedules) ? data.schedules : [];
+        renderFixedSchedules();
+      } catch (e) {
+        document.getElementById('fixedScheduleList').innerHTML = '<p class="muted">固定班表載入失敗。</p>';
+      }
+    }
+
+    function initLeaveDateTime() {
+      const startAt = document.getElementById('leaveStartAt');
+      const endAt = document.getElementById('leaveEndAt');
+      if (!startAt || !endAt) return;
+      const now = new Date();
+      now.setMinutes(0, 0, 0);
+      const end = new Date(now.getTime() + 60 * 60 * 1000);
+      const toInput = (d) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const h = String(d.getHours()).padStart(2, '0');
+        const min = String(d.getMinutes()).padStart(2, '0');
+        return `${y}-${m}-${day}T${h}:${min}`;
+      };
+      if (!startAt.value) startAt.value = toInput(now);
+      if (!endAt.value) endAt.value = toInput(end);
+    }
+
+    function loadLeaves() {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth();
+      const from = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+      const endDate = new Date(year, month + 1, 0).getDate();
+      const to = `${year}-${String(month + 1).padStart(2, '0')}-${String(endDate).padStart(2, '0')}`;
+      fetch(`${API_URL}/api/liff/coach-leaves?userId=${encodeURIComponent(userId)}&from=${from}&to=${to}`)
+        .then(r => r.json())
+        .then(({ leaves }) => {
+          const div = document.getElementById('leaveList');
+          const seen = new Set();
+          const unique = (leaves || []).filter(l => {
+            const key = `${l.startDate || l.leaveDate || ''}|${l.startTime || ''}|${l.endDate || l.leaveDate || ''}|${l.endTime || ''}|${l.note || ''}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+          const toTs = (l) => {
+            const startDate = l.startDate || l.leaveDate || '9999-12-31';
+            const endDate = l.endDate || l.leaveDate || startDate;
+            const start = l.startTime || '00:00';
+            const end = l.endTime || '23:59';
+            const startTs = Date.parse(`${startDate}T${start}:00`);
+            const endTs = Date.parse(`${endDate}T${end}:00`);
+            return { startTs, endTs };
+          };
+          const sorted = unique.sort((a, b) => {
+            const aTs = toTs(a);
+            const bTs = toTs(b);
+            const aPassed = aTs.endTs < now.getTime();
+            const bPassed = bTs.endTs < now.getTime();
+            if (aPassed !== bPassed) return aPassed ? 1 : -1;
+            if (aTs.startTs !== bTs.startTs) return aTs.startTs - bTs.startTs;
+            return (a.note || '').localeCompare(b.note || '');
+          });
+          div.innerHTML = sorted.length
+            ? sorted.map(l => {
+                const sd = l.startDate || l.leaveDate || '';
+                const ed = l.endDate || l.leaveDate || sd;
+                const st = l.startTime || '00:00';
+                const et = l.endTime || '23:59';
+                const range = sd === ed ? `${sd} ${st} - ${et}` : `${sd} ${st} - ${ed} ${et}`;
+                return `<p>${range} ${l.note || ''}</p>`;
+              }).join('')
+            : '<p>本月尚無休假</p>';
+        });
+    }
+
+    function bindCoachEvents() {
+      document.querySelectorAll('#coachApp .tab').forEach(t => {
+        t.addEventListener('click', () => {
+          document.querySelectorAll('#coachApp .tab').forEach(x => x.classList.remove('active'));
+          document.querySelectorAll('#credit, #students, #schedule, #leave').forEach(x => x.classList.add('hidden'));
+          t.classList.add('active');
+          document.getElementById(t.dataset.tab).classList.remove('hidden');
+          if (t.dataset.tab === 'students') loadStudents();
+          if (t.dataset.tab === 'schedule') { loadCoachSchedule(); loadFixedSchedules(); }
+        });
+      });
+      document.getElementById('btnReloadStudents').addEventListener('click', () => loadStudents());
+      document.getElementById('btnSearchSchedule').addEventListener('click', () => loadCoachSchedule());
+      document.getElementById('btnAddFixed').addEventListener('click', async () => {
+        const weekday = document.getElementById('fixedWeekday').value;
+        const startTime = document.getElementById('fixedStartTime').value;
+        const location = document.getElementById('fixedLocation').value;
+        const service = document.getElementById('fixedService').value;
+        const note = document.getElementById('fixedNote').value.trim();
+        if (weekday === '' || !startTime || !location || !service) {
+          showToast('請完整填寫固定班表欄位', 'error');
+          return;
+        }
+        try {
+          const res = await fetch(`${API_URL}/api/liff/fixed-schedule`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              coachUserId: userId,
+              weekday: Number(weekday),
+              startTime,
+              location,
+              service,
+              note: note || null,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok || data.error) {
+            showToast(data.error || '新增固定班失敗', 'error');
+            return;
+          }
+          showToast('已新增固定班', 'success');
+          document.getElementById('fixedNote').value = '';
+          await loadFixedSchedules();
+          await loadCoachSchedule();
+        } catch (e) {
+          showToast('請確認網路連線', 'error');
+        }
+      });
+      document.getElementById('fixedScheduleList').addEventListener('click', async (e) => {
+        const target = e.target;
+        if (!(target instanceof HTMLElement)) return;
+        const id = target.dataset.fixedDelete;
+        if (!id) return;
+        try {
+          const res = await fetch(`${API_URL}/api/liff/fixed-schedule?userId=${encodeURIComponent(userId)}&id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+          const data = await res.json();
+          if (!res.ok || data.error) {
+            showToast(data.error || '刪除固定班失敗', 'error');
+            return;
+          }
+          showToast('已刪除固定班', 'success');
+          await loadFixedSchedules();
+          await loadCoachSchedule();
+        } catch (err) {
+          showToast('請確認網路連線', 'error');
+        }
+      });
+      document.getElementById('studentSearch').addEventListener('input', (e) => {
+        studentSearchKeyword = (e.target.value || '').trim();
+        renderStudentDetails();
+      });
+      document.getElementById('onlyRemaining').addEventListener('change', (e) => {
+        onlyWithRemaining = !!e.target.checked;
+        renderStudentDetails();
+      });
+      document.getElementById('btnCredit').addEventListener('click', async () => {
+        const targetUserId = document.getElementById('studentSelect').value;
+        const amount = parseInt(document.getElementById('creditAmount').value, 10);
+        const note = document.getElementById('creditNote').value.trim();
+        const realName = document.getElementById('creditRealName').value.trim();
+        const startDate = document.getElementById('creditStartDate').value;
+        const price = document.getElementById('creditPrice').value;
+        if (!targetUserId || !amount) { showToast('請選擇學員並輸入堂數', 'error'); return; }
+        document.getElementById('btnCredit').disabled = true;
+        const isAdd = amount > 0;
+        try {
+          const url = isAdd ? `${API_URL}/api/liff/add-credits` : `${API_URL}/api/liff/deduct-credits`;
+          const body = isAdd
+            ? {
+                coachUserId: userId,
+                targetUserId,
+                credits: amount,
+                title: note || '手動加課',
+                validTo: null,
+                validFrom: startDate || null,
+                realName: realName || null,
+                price: price ? Number(price) : null,
+              }
+            : {
+                coachUserId: userId,
+                targetUserId,
+                amount: -amount,   // amount is negative, send positive
+                note: note || null,
+              };
+          const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          const data = await res.json();
+          if (data.ok) {
+            const msg = isAdd
+              ? '開課成功！已通知學員\n即將關閉視窗…'
+              : `扣課成功！剩餘 ${data.remaining} 堂\n即將關閉視窗…`;
+            showToast(msg, 'success', 2200);
+            setTimeout(() => {
+              try { if (liff.isInClient()) liff.closeWindow(); } catch(e) {}
+            }, 1800);
+          } else {
+            showToast(data.error || '送出失敗，請重試', 'error');
+            document.getElementById('btnCredit').disabled = false;
+          }
+        } catch (e) {
+          showToast('請確認網路連線', 'error');
+          document.getElementById('btnCredit').disabled = false;
+        }
+      });
+      document.getElementById('btnLeave').addEventListener('click', async () => {
+        const startAt = document.getElementById('leaveStartAt').value;
+        const endAt = document.getElementById('leaveEndAt').value;
+        const note = document.getElementById('leaveNote').value || null;
+        if (!startAt || !endAt) { showToast('請選擇開始與結束日期時間', 'error'); return; }
+        const [startDate, startTime] = startAt.split('T');
+        const [endDate, endTime] = endAt.split('T');
+        if (!startDate || !startTime || !endDate || !endTime) { showToast('日期時間格式錯誤', 'error'); return; }
+        if (new Date(`${startDate}T${startTime}:00`) >= new Date(`${endDate}T${endTime}:00`)) {
+          showToast('結束時間需晚於開始時間', 'error');
+          return;
+        }
+        try {
+          const res = await fetch(`${API_URL}/api/liff/coach-leave`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ coachUserId: userId, startDate, startTime, endDate, endTime, note }) });
+          const data = await res.json();
+          if (data.ok) { showToast('已新增', 'success'); initLeaveDateTime(); loadLeaves(); } else showToast(data.error || '失敗', 'error');
+        } catch (e) { showToast('請確認網路連線', 'error'); }
+      });
+    }
+
+    async function loadBookingOptions() {
+      const res = await fetch(`${API_URL}/api/liff/booking-options`);
+      const { locations: locs, services: svcs } = await res.json();
+      const locSel = document.getElementById('locationSelect');
+      const svcSel = document.getElementById('serviceSelect');
+      const dateSel = document.getElementById('bookingDate');
+      const timeSel = document.getElementById('timeSelect');
+      locSel.innerHTML = '<option value="">請選擇地點</option>' + (locs || []).map(l => `<option value="${l}">${l}</option>`).join('');
+      svcSel.innerHTML = '<option value="">請選擇課程</option>' + (svcs || []).map(s => `<option value="${s}">${s}</option>`).join('');
+      const dateOptions = ['<option value="">選擇日期</option>'];
+      const base = new Date();
+      for (let i = 0; i < 90; i++) {
+        const d = new Date(base);
+        d.setDate(base.getDate() + i);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const date = `${y}-${m}-${day}`;
+        dateOptions.push(`<option value="${date}">${date}</option>`);
+      }
+      dateSel.innerHTML = dateOptions.join('');
+      timeSel.innerHTML = '<option value="">選擇時段</option>';
+    }
+
+    function loadPackages() {
+      fetch(`${API_URL}/api/liff/my-packages?userId=${userId}`)
+        .then(r => r.json())
+        .then(({ packages }) => {
+          const div = document.getElementById('packageList');
+          const totalDiv = document.getElementById('totalCredits');
+          if (!packages || packages.length === 0) {
+            div.innerHTML = '<p>您目前沒有可用的儲值課程包。</p>';
+            totalDiv.textContent = '';
+          } else {
+            let total = 0;
+            div.innerHTML = packages.map(p => { total += p.remainingCredits; return `<div class="pkg-item"><strong>${p.title}</strong><br>剩餘：${p.remainingCredits} / ${p.totalCredits} 堂${p.validTo ? ' · 到期：' + p.validTo : ''}</div>`; }).join('');
+            totalDiv.textContent = '🎯 總剩餘：' + total + ' 堂';
+          }
+        });
+    }
+
+    function renderBookings() {
+      const div = document.getElementById('bookingList');
+      const statusText = {
+        pending: '待確認',
+        approved: '已確認',
+        rejected: '已拒絕（請改約）',
+        cancelled: '已取消',
+        completed: '已完成',
+      };
+      if (!bookingItems || bookingItems.length === 0) {
+        div.innerHTML = '<p>您目前沒有預約紀錄。</p>';
+        return;
+      }
+      const renderCard = (b) => {
+        const st = statusText[b.status] || b.status;
+        return `<div class="booking-item"><strong>${b.bookingDate} ${b.startTime}</strong><br>📍 ${b.location} / ${b.service}<br>📌 ${st}</div>`;
+      };
+      const renderSection = (key, title, items) => {
+        if (!items.length) return '';
+        const collapsed = !!bookingSectionCollapsed[key];
+        const btnText = collapsed ? '展開' : '收合';
+        return `
+          <div class="booking-section" data-section="${key}">
+            <div class="booking-section-header">
+              <div class="booking-section-title">${title}（${items.length}）</div>
+              <button type="button" class="booking-toggle-btn" data-section="${key}">${btnText}</button>
+            </div>
+            <div class="booking-section-content${collapsed ? ' hidden' : ''}" data-section="${key}">
+              ${items.map(renderCard).join('')}
+            </div>
+          </div>
+        `;
+      };
+      if (bookingFilter !== 'all') {
+        const filtered = bookingItems.filter((b) => {
+          if (bookingFilter === 'rejected') return b.status === 'rejected' || b.status === 'cancelled';
+          return b.status === bookingFilter;
+        });
+        div.innerHTML = filtered.length ? filtered.map(renderCard).join('') : '<p>此篩選條件下沒有資料。</p>';
+        return;
+      }
+      const approved = bookingItems.filter((b) => b.status === 'approved');
+      const pending = bookingItems.filter((b) => b.status === 'pending');
+      const rejected = bookingItems.filter((b) => b.status === 'rejected' || b.status === 'cancelled');
+      const others = bookingItems.filter((b) => !['approved', 'pending', 'rejected', 'cancelled'].includes(b.status));
+      const sections = [];
+      sections.push(renderSection('approved', '已確認', approved));
+      sections.push(renderSection('pending', '待確認', pending));
+      sections.push(renderSection('rejected', '已拒絕／已取消', rejected));
+      sections.push(renderSection('others', '其他狀態', others));
+      div.innerHTML = sections.join('');
+    }
+
+    function loadBookings() {
+      fetch(`${API_URL}/api/liff/my-bookings?userId=${userId}`)
+        .then(r => r.json())
+        .then(({ bookings }) => {
+          bookingItems = Array.isArray(bookings) ? bookings : [];
+          renderBookings();
+        });
+    }
+
+    function loadAvailableSlots() {
+      const date = document.getElementById('bookingDate').value;
+      if (!date) {
+        const sel = document.getElementById('timeSelect');
+        sel.innerHTML = '<option value="">選擇時段</option>';
+        return;
+      }
+      const service = document.getElementById('serviceSelect').value;
+      fetch(`${API_URL}/api/liff/available-slots?date=${encodeURIComponent(date)}&service=${encodeURIComponent(service || '')}`)
+        .then(r => r.json())
+        .then(({ slots, slotStatus, error }) => {
+          const sel = document.getElementById('timeSelect');
+          if (error) {
+            sel.innerHTML = '<option value="">時段載入失敗，請重試</option>';
+            return;
+          }
+          const formatSlotLabel = (time) => {
+            const h = parseInt((time || '00:00').split(':')[0], 10);
+            const next = String(h + 1).padStart(2, '0') + ':00';
+            return `${time}-${next}`;
+          };
+          const statuses = Array.isArray(slotStatus) ? slotStatus : (slots || []).map(s => ({ time: s, available: true }));
+          const options = statuses.map(s => {
+            const label = formatSlotLabel(s.time);
+            if (s.available) return `<option value="${s.time}">${label}</option>`;
+            if (s.reason === 'booked') return `<option value="${s.time}" disabled>${label}（教練於${s.location || '其他地點'}上課中）</option>`;
+            if (s.reason === 'outside_hours') return `<option value="${s.time}" disabled>${label}（超出課程可預約時段）</option>`;
+            return `<option value="${s.time}" disabled>${label}（教練休假）</option>`;
+          });
+          sel.innerHTML = '<option value="">選擇時段</option>' + options.join('');
+        });
+    }
+
+    function bindStudentEvents() {
+      document.querySelectorAll('#studentApp .tab').forEach(t => {
+        t.addEventListener('click', () => {
+          document.querySelectorAll('#studentApp .tab').forEach(x => x.classList.remove('active'));
+          document.querySelectorAll('#credits, #bookings, #new').forEach(x => x.classList.add('hidden'));
+          t.classList.add('active');
+          document.getElementById(t.dataset.tab).classList.remove('hidden');
+          if (t.dataset.tab === 'new') loadAvailableSlots();
+        });
+      });
+      document.getElementById('bookingDate').addEventListener('change', loadAvailableSlots);
+      document.getElementById('serviceSelect').addEventListener('change', loadAvailableSlots);
+      document.querySelectorAll('#bookingFilter .booking-filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          bookingFilter = btn.dataset.filter || 'all';
+          document.querySelectorAll('#bookingFilter .booking-filter-btn').forEach(x => x.classList.remove('active'));
+          btn.classList.add('active');
+          renderBookings();
+        });
+      });
+      document.getElementById('bookingList').addEventListener('click', (e) => {
+        const target = e.target;
+        if (!(target instanceof HTMLElement)) return;
+        if (!target.classList.contains('booking-toggle-btn')) return;
+        const key = target.dataset.section;
+        if (!key) return;
+        bookingSectionCollapsed[key] = !bookingSectionCollapsed[key];
+        renderBookings();
+      });
+
+      function closeWindowAfterSuccess() {
+        if (!window.liff || !liff.isInClient()) return;
+        setTimeout(() => {
+          try {
+            liff.closeWindow();
+          } catch (e) {
+            console.warn('closeWindow failed', e);
+          }
+        }, 1200);
+      }
+
+      document.getElementById('btnBook').addEventListener('click', async () => {
+        const location = document.getElementById('locationSelect').value;
+        const service = document.getElementById('serviceSelect').value;
+        const bookingDate = document.getElementById('bookingDate').value;
+        const startTime = document.getElementById('timeSelect').value;
+        if (!location || !service || !bookingDate || !startTime) { showToast('請填寫完整預約資訊', 'error'); return; }
+        try {
+          const res = await fetch(`${API_URL}/api/liff/create-booking`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, bookingDate, startTime, location, service }) });
+          const data = await res.json();
+          if (data.ok) {
+            showToast('預約已送出，待教練確認\n即將自動關閉視窗，並於 LINE 顯示確認訊息。', 'success', 2600);
+            loadBookings();
+            closeWindowAfterSuccess();
+          } else showToast(data.error || '預約失敗', 'error');
+        } catch (e) { showToast('請確認網路連線', 'error'); }
+      });
+    }
+
+    init();
+  </script>
+</body>
+</html>

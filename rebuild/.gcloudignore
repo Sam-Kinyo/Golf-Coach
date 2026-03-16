@@ -1,0 +1,14 @@
+# 不要上傳到 Cloud Build
+.git
+.gitignore
+node_modules
+.env
+.env.*
+!.env.example
+serviceAccountKey.json
+*.log
+docs/
+liff/
+DESIGN.md
+ER-DIAGRAM.md
+schema.sql
