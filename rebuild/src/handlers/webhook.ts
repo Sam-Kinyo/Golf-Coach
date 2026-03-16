@@ -5,6 +5,7 @@ import { getActivePackages } from '../services/package';
 import { env } from '../config/env';
 import { getUser } from '../services/user';
 import { notifyStudentBookingApproved, notifyStudentBookingRejected } from '../services/notification';
+import { getFixedSessionsOnDate } from '../services/fixedSchedule';
 
 const LIFF_COACH_URL = env.liff.coachId ? `https://liff.line.me/${env.liff.coachId}` : '';
 // 學員與教練共用同一個 LIFF（依身分自動顯示對應介面）
@@ -272,17 +273,35 @@ function getStudentHelp(): string {
 }
 
 async function formatBookings(label: string, dateStr: string, bookings: any[]): Promise<string> {
-  if (bookings.length === 0) {
-    return `📋 ${label}（${dateStr}）沒有任何預約。`;
+  const fixedSessions = await getFixedSessionsOnDate(dateStr);
+  const totalCount = bookings.length + fixedSessions.length;
+  
+  if (totalCount === 0) {
+    return `📋 ${label}（${dateStr}）沒有任何預約與固定課程。`;
   }
-  const lines = [`📋 ${label}（${dateStr}）共 ${bookings.length} 筆`, ''];
-  for (const b of bookings) {
-    const user = await getUser(b.userId);
-    const name = user?.alias ?? user?.displayName ?? b.userId;
-    lines.push(`⏰ ${b.startTime}  ${name}`);
-    lines.push(`   📍 ${b.location} / ${b.service}`);
-    lines.push(`   📌 ${b.status}`);
-    lines.push('');
+  const lines = [`📋 ${label}（${dateStr}）共 ${totalCount} 筆`, ''];
+  
+  if (fixedSessions.length > 0) {
+    lines.push('【固定課程】');
+    for (const f of fixedSessions) {
+      lines.push(`⏰ ${f.startTime}  固定課程`);
+      lines.push(`   📍 ${f.location} / ${f.service}`);
+      lines.push(`   📌 固定排程`);
+      lines.push('');
+    }
   }
+
+  if (bookings.length > 0) {
+    lines.push('【一般預約】');
+    for (const b of bookings) {
+      const user = await getUser(b.userId);
+      const name = user?.alias ?? user?.displayName ?? b.userId;
+      lines.push(`⏰ ${b.startTime}  ${name}`);
+      lines.push(`   📍 ${b.location} / ${b.service}`);
+      lines.push(`   📌 ${b.status}`);
+      lines.push('');
+    }
+  }
+  
   return lines.join('\n');
 }
