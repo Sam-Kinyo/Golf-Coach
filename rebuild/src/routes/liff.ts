@@ -1,12 +1,12 @@
 import { FastifyInstance } from 'fastify';
 import { getOrCreateUser, getUser, listStudentsWithAlias, setAlias } from '../services/user';
-import { getActivePackages, addCredits, deductCredits } from '../services/package';
+import { getActivePackages, addCredits, deductCredits, getAllPackagesForRevenue } from '../services/package';
 import { addLeave, listLeaves } from '../services/coachLeave';
-import { createBooking, getBookingsByDateRange, getBookingsByUser, getSlotStatuses } from '../services/booking';
+import { getBooking, rejectBooking, createBooking, getBookingsByDateRange, getBookingsByUser, getSlotStatuses, cancelBooking } from '../services/booking';
 import { addFixedSchedule, deleteFixedSchedule, getFixedSessionsByDateRange, listFixedSchedules } from '../services/fixedSchedule';
 import { isCoach } from '../services/line';
 import { getAvailableTimeSlots, LOCATION_MAP, SERVICE_DURATION } from '../utils/constants';
-import { notifyCoachesNewBooking, notifyStudentBookingCreated, notifyStudentCreditAdded, notifyCoachCreditAdded, notifyStudentCreditDeducted, notifyCoachCreditDeducted } from '../services/notification';
+import { notifyCoachesNewBooking, notifyStudentBookingCreated, notifyStudentCreditAdded, notifyCoachCreditAdded, notifyStudentCreditDeducted, notifyCoachCreditDeducted, notifyStudentBookingRejected, notifyCoachesStudentCancelled } from '../services/notification';
 
 function getDateInTaipei(offsetDays = 0): string {
   const date = new Date();
@@ -44,6 +44,38 @@ export async function liffRoutes(app: FastifyInstance): Promise<void> {
     const from = (req.query as any).from ?? getDateInTaipei(-30);
     const bookings = await getBookingsByUser(userId, from);
     return { bookings };
+  });
+
+  app.get('/api/liff/student-history', async (req, reply) => {
+    const userId = (req.query as any).userId;
+    const targetUserId = (req.query as any).targetUserId;
+    
+    let authorizedUserId = '';
+    if (isCoach(userId)) {
+      authorizedUserId = targetUserId || userId;
+    } else {
+      if (!userId || (targetUserId && targetUserId !== userId)) {
+        return reply.status(403).send({ error: '無權查看他人紀錄' });
+      }
+      authorizedUserId = userId;
+    }
+
+    if (!authorizedUserId) return reply.status(400).send({ error: '缺少查詢目標' });
+
+    const packages = await getActivePackages(authorizedUserId);
+    const allBookings = await getBookingsByUser(authorizedUserId);
+    const today = new Date().toISOString().slice(0, 10);
+    
+    const historyBookings = allBookings.filter(b => 
+      b.bookingDate <= today && 
+      (b.status === 'approved' || b.status === 'completed')
+    ).sort((a, b) => {
+      const dateCmp = b.bookingDate.localeCompare(a.bookingDate);
+      if (dateCmp !== 0) return dateCmp;
+      return b.startTime.localeCompare(a.startTime);
+    });
+
+    return { packages, historyBookings };
   });
 
   app.get('/api/liff/booking-options', async (_req, reply) => {
@@ -225,7 +257,7 @@ export async function liffRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/api/liff/deduct-credits', async (req, reply) => {
     const body = req.body as any;
-    const { coachUserId, targetUserId, amount, note } = body;
+    const { coachUserId, targetUserId, amount, note, lessonNote } = body;
     if (!coachUserId || !isCoach(coachUserId)) {
       return reply.status(403).send({ error: 'Forbidden' });
     }
@@ -233,21 +265,23 @@ export async function liffRoutes(app: FastifyInstance): Promise<void> {
     if (!targetUserId || !deductAmount || deductAmount <= 0) {
       return reply.status(400).send({ ok: false, error: '請確認學員與扣課堂數' });
     }
+    const combinedNote = [note, lessonNote].filter(Boolean).join(' | ');
     let result: { packageId: string; title: string; remaining: number };
     try {
-      result = await deductCredits(targetUserId, deductAmount, 'manual_adjustment', undefined, note || undefined);
+      result = await deductCredits(targetUserId, deductAmount, 'manual_adjustment', undefined, combinedNote || undefined);
     } catch (err: any) {
       return reply.status(400).send({ ok: false, error: err.message ?? '扣課失敗' });
     }
     const studentUser = await getOrCreateUser(targetUserId);
     const studentDisplayName = studentUser?.displayName || undefined;
+    const displayNote = lessonNote ? `${note || ''}${note ? ' · ' : ''}上課內容：${lessonNote}` : (note || undefined);
     await Promise.all([
       notifyStudentCreditDeducted({
         userId: targetUserId,
         title: result.title,
         deducted: deductAmount,
         remaining: result.remaining,
-        note: note || undefined,
+        note: displayNote,
       }),
       notifyCoachCreditDeducted({
         targetUserId,
@@ -255,7 +289,7 @@ export async function liffRoutes(app: FastifyInstance): Promise<void> {
         title: result.title,
         deducted: deductAmount,
         remaining: result.remaining,
-        note: note || undefined,
+        note: displayNote,
       }),
     ]);
     return { ok: true, ...result, deducted: deductAmount };
@@ -288,5 +322,139 @@ export async function liffRoutes(app: FastifyInstance): Promise<void> {
     }
     const leaves = await listLeaves(fromDate, toDate);
     return { leaves };
+  });
+
+  app.get('/api/liff/revenue-summary', async (req, reply) => {
+    const userId = (req.query as any).userId;
+    if (!userId || !isCoach(userId)) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+    const packages = await getAllPackagesForRevenue();
+    const studentMap: Record<string, {
+      name: string;
+      totalPaid: number;
+      earnedIncome: number;
+      unearned: number;
+      totalCredits: number;
+      usedCredits: number;
+      remainingCredits: number;
+    }> = {};
+
+    for (const p of packages) {
+      const price = p.price ?? 0;
+      const unitPrice = p.totalCredits > 0 ? price / p.totalCredits : 0;
+      const used = p.totalCredits - p.remainingCredits;
+      const earned = Math.round(used * unitPrice);
+      const unearned = Math.round(p.remainingCredits * unitPrice);
+
+      if (!studentMap[p.userId]) {
+        const user = await getUser(p.userId);
+        studentMap[p.userId] = {
+          name: user?.alias ?? user?.displayName ?? p.userId,
+          totalPaid: 0,
+          earnedIncome: 0,
+          unearned: 0,
+          totalCredits: 0,
+          usedCredits: 0,
+          remainingCredits: 0,
+        };
+      }
+      studentMap[p.userId].totalPaid += price;
+      studentMap[p.userId].earnedIncome += earned;
+      studentMap[p.userId].unearned += unearned;
+      studentMap[p.userId].totalCredits += p.totalCredits;
+      studentMap[p.userId].usedCredits += used;
+      studentMap[p.userId].remainingCredits += p.remainingCredits;
+    }
+
+    const students = Object.entries(studentMap)
+      .map(([uid, data]) => ({ userId: uid, ...data }))
+      .sort((a, b) => b.unearned - a.unearned);
+
+    const totals = students.reduce(
+      (acc, s) => ({
+        totalPaid: acc.totalPaid + s.totalPaid,
+        earnedIncome: acc.earnedIncome + s.earnedIncome,
+        unearned: acc.unearned + s.unearned,
+      }),
+      { totalPaid: 0, earnedIncome: 0, unearned: 0 }
+    );
+
+    return { totals, students };
+  });
+
+  app.post('/api/liff/cancel-coach-schedule', async (req, reply) => {
+    const body = req.body as any;
+    const { coachUserId, type, id, date, startTime, endTime } = body;
+    if (!coachUserId || !isCoach(coachUserId)) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+    
+    try {
+      if (type === 'fixed') {
+        if (!date || !startTime || !endTime) {
+          return reply.status(400).send({ error: '缺少固定班日期或時間' });
+        }
+        await addLeave(date, startTime, date, endTime, '取消固定排班');
+        return { ok: true };
+      } else if (type === 'booking') {
+        if (!id) return reply.status(400).send({ error: '缺少預約 ID' });
+        const booking = await getBooking(id);
+        if (!booking) return reply.status(400).send({ error: '預約不存在' });
+        await rejectBooking(id);
+        await notifyStudentBookingRejected({
+          bookingId: id,
+          userId: booking.userId,
+          bookingDate: booking.bookingDate,
+          startTime: booking.startTime,
+          location: booking.location,
+          service: booking.service,
+        });
+        return { ok: true };
+      }
+      return reply.status(400).send({ error: '未知的預約類型' });
+    } catch (err: any) {
+      return reply.status(500).send({ error: err.message ?? '取消預約失敗' });
+    }
+  });
+
+  // ========== 學員取消預約 ==========
+  app.post('/api/liff/cancel-booking', async (req, reply) => {
+    const { userId, bookingId } = req.body as any;
+    if (!userId || !bookingId) return reply.status(400).send({ error: 'Missing parameters' });
+    
+    const booking = await getBooking(bookingId);
+    if (!booking) return reply.status(400).send({ error: '預約不存在' });
+    if (booking.userId !== userId) return reply.status(403).send({ error: '無權限取消此預約' });
+    if (booking.status === 'cancelled' || booking.status === 'rejected' || booking.status === 'completed') {
+      return reply.status(400).send({ error: '此預約狀態無法取消' });
+    }
+
+    try {
+      await cancelBooking(bookingId, '學員自行從 LIFF 取消');
+      await notifyCoachesStudentCancelled({
+        bookingId,
+        userId: booking.userId,
+        bookingDate: booking.bookingDate,
+        startTime: booking.startTime,
+        location: booking.location,
+        service: booking.service,
+      });
+
+      // 回傳未來 3 天可預約時段供改約
+      const rescheduleSlots: { date: string; slots: string[] }[] = [];
+      for (let i = 1; i <= 3; i++) {
+        const d = getDateInTaipei(i);
+        const slotStatus = await getSlotStatuses(d, booking.service);
+        const available = slotStatus.filter((s) => s.available).map((s) => s.time);
+        if (available.length > 0) {
+          rescheduleSlots.push({ date: d, slots: available });
+        }
+      }
+
+      return { ok: true, rescheduleSlots };
+    } catch (err: any) {
+      return reply.status(500).send({ error: err.message ?? '取消失敗' });
+    }
   });
 }

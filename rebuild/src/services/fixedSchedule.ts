@@ -1,6 +1,7 @@
 import { getDb } from '../config/firebase';
 import { admin } from '../config/firebase';
-import { SERVICE_DURATION } from '../utils/constants';
+import { SERVICE_DURATION, getAvailableTimeSlots } from '../utils/constants';
+import { getBlockedSlots } from './coachLeave';
 
 const COLLECTION = 'fixed_schedules';
 
@@ -81,23 +82,38 @@ export async function deleteFixedSchedule(id: string): Promise<void> {
 export async function getFixedSessionsOnDate(date: string): Promise<FixedSession[]> {
   const weekday = toWeekday(date);
   const templates = await listFixedSchedules();
-  return templates
-    .filter((t) => t.enabled !== false && t.weekday === weekday)
-    .map((t) => {
-      const startH = parseHour(t.startTime);
-      const duration = SERVICE_DURATION[t.service] ?? 1;
-      const endH = startH + duration;
-      return {
-        templateId: t.id,
-        date,
-        weekday,
-        startTime: t.startTime,
-        endTime: `${String(endH).padStart(2, '0')}:00`,
-        location: t.location,
-        service: t.service,
-        note: t.note,
-      };
+  const allSlots = getAvailableTimeSlots();
+  const blockedSet = await getBlockedSlots(date, allSlots);
+
+  const sessions: FixedSession[] = [];
+  for (const t of templates) {
+    if (t.enabled === false || t.weekday !== weekday) continue;
+
+    const startH = parseHour(t.startTime);
+    const duration = SERVICE_DURATION[t.service] ?? 1;
+    let blocked = false;
+    for (let i = 0; i < duration; i++) {
+      const slot = `${String(startH + i).padStart(2, '0')}:00`;
+      if (blockedSet.has(slot)) {
+        blocked = true;
+        break;
+      }
+    }
+    if (blocked) continue;
+
+    const endH = startH + duration;
+    sessions.push({
+      templateId: t.id,
+      date,
+      weekday,
+      startTime: t.startTime,
+      endTime: `${String(endH).padStart(2, '0')}:00`,
+      location: t.location,
+      service: t.service,
+      note: t.note,
     });
+  }
+  return sessions;
 }
 
 export async function getFixedSessionsByDateRange(fromDate: string, toDate: string): Promise<FixedSession[]> {

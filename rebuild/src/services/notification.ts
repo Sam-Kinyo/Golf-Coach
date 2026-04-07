@@ -2,8 +2,11 @@ import { getDb } from '../config/firebase';
 import { admin } from '../config/firebase';
 import { pushMessage } from './line';
 import { LOCATION_MAP } from '../utils/constants';
-import { getApprovedBookingsForTomorrow } from './booking';
-import { getPackagesExpiringWithinDays } from './package';
+import { getApprovedBookingsForTomorrow, getBookingsByDate } from './booking';
+import { getFixedSessionsOnDate } from './fixedSchedule';
+import { getPackagesExpiringWithinDays, getLowCreditPackages, getActivePackages, getAllPackagesForRevenue } from './package';
+import { listStudentsWithAlias } from './user';
+import { getBookingsByUser } from './booking';
 import { getUser } from './user';
 import { env } from '../config/env';
 
@@ -92,25 +95,55 @@ export async function sendExpiryWarnings(): Promise<number> {
 export async function sendCoachDigest(coachUserId: string): Promise<number> {
   const bookings = await getApprovedBookingsForTomorrow();
   const dateStr = getDateInTaipei(1);
+  const fixedSessions = await getFixedSessionsOnDate(dateStr);
 
-  if (bookings.length === 0) {
+  type Session = {
+    startTime: string;
+    location: string;
+    service: string;
+    title: string;
+  };
+
+  const sessions: Session[] = [];
+
+  for (const b of bookings) {
+    const user = await getUser(b.userId);
+    const name = user?.alias ?? user?.displayName ?? b.userId;
+    sessions.push({
+      startTime: b.startTime,
+      location: b.location,
+      service: b.service,
+      title: name,
+    });
+  }
+
+  for (const f of fixedSessions) {
+    sessions.push({
+      startTime: f.startTime,
+      location: f.location,
+      service: f.service,
+      title: f.note ? `[固定] ${f.note}` : `[固定]`,
+    });
+  }
+
+  sessions.sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+  if (sessions.length === 0) {
     await pushMessage(coachUserId, [
       { type: 'text', text: `📋 明日行程彙報\n\n${dateStr}\n\n✅ 明天沒有排課，好好休息！💤` },
     ]);
     return 0;
   }
 
-  const lines = ['📋 明日行程彙報', '', `${dateStr}（共 ${bookings.length} 堂課）`, ''];
-  for (const b of bookings) {
-    const user = await getUser(b.userId);
-    const name = user?.alias ?? user?.displayName ?? b.userId;
-    lines.push(`⏰ ${b.startTime}  ${name}`);
-    lines.push(`   📍 ${b.location}`);
-    lines.push(`   🏌️ ${b.service}`);
+  const lines = ['📋 明日行程彙報', '', `${dateStr}（共 ${sessions.length} 堂課）`, ''];
+  for (const s of sessions) {
+    lines.push(`⏰ ${s.startTime}  ${s.title}`);
+    lines.push(`   📍 ${s.location}`);
+    lines.push(`   🏌️ ${s.service}`);
     lines.push('');
   }
   await pushMessage(coachUserId, [{ type: 'text', text: lines.join('\n') }]);
-  return bookings.length;
+  return sessions.length;
 }
 
 export async function notifyCoachesNewBooking(input: {
@@ -137,6 +170,46 @@ export async function notifyCoachesNewBooking(input: {
     `🆔 編號：${input.bookingId}` +
     (mapsUrl ? `\n🧭 導航：${mapsUrl}` : '') +
     `\n\n請直接點下方按鈕處理。`;
+
+  const fixedSessions = await getFixedSessionsOnDate(input.bookingDate);
+  const bookings = await getBookingsByDate(input.bookingDate);
+
+  const items: any[] = [];
+  for (const f of fixedSessions) {
+    items.push({
+      startTime: f.startTime,
+      title: f.note ? `固定課程（${f.note}）` : '固定課程',
+      status: 'fixed'
+    });
+  }
+  for (const b of bookings) {
+    const u = await getUser(b.userId);
+    const name = u?.alias ?? u?.displayName ?? b.userId;
+    items.push({
+      startTime: b.startTime,
+      title: name,
+      status: b.status,
+      id: b.id
+    });
+  }
+
+  items.sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+  let scheduleText = `📅 教練當日（${input.bookingDate}）行程總覽：\n`;
+  if (items.length === 0) {
+    scheduleText += '無其他行程';
+  } else {
+    scheduleText += items.map(item => {
+      let st = '';
+      if (item.status === 'pending') st = ' (待確認)';
+      if (item.status === 'approved') st = ' (已確認)';
+      if (item.status === 'fixed') st = ' (固定班)';
+      
+      const mark = item.id === input.bookingId ? '🆕 ' : '🔸 ';
+      return `${mark}${item.startTime} ${item.title}${st}`;
+    }).join('\n');
+  }
+
   const actionCard = {
     type: 'template',
     altText: `新預約待確認：${studentName} ${input.bookingDate} ${input.startTime}`,
@@ -164,10 +237,43 @@ export async function notifyCoachesNewBooking(input: {
   let sent = 0;
   for (const coachId of coachIds) {
     try {
-      await pushMessage(coachId, [{ type: 'text', text: detailText }, actionCard]);
+      await pushMessage(coachId, [{ type: 'text', text: detailText }, { type: 'text', text: scheduleText }, actionCard]);
       sent++;
     } catch (err) {
       console.error('[notify/new-booking]', coachId, err);
+    }
+  }
+  return sent;
+}
+
+export async function notifyCoachesStudentCancelled(input: {
+  bookingId: string;
+  userId: string;
+  bookingDate: string;
+  startTime: string;
+  location: string;
+  service: string;
+}): Promise<number> {
+  const coachIds = env.coachLineUserIds;
+  if (!coachIds.length) return 0;
+
+  const user = await getUser(input.userId);
+  const studentName = user?.alias ?? user?.displayName ?? input.userId;
+  const text =
+    `⚠️ 學員已取消預約\n\n` +
+    `👤 學員：${studentName}\n` +
+    `📅 日期：${input.bookingDate}\n` +
+    `⏰ 時段：${input.startTime}\n` +
+    `📍 地點：${input.location}\n` +
+    `🏌️ 課程：${input.service}`;
+
+  let sent = 0;
+  for (const coachId of coachIds) {
+    try {
+      await pushMessage(coachId, [{ type: 'text', text }]);
+      sent++;
+    } catch (err) {
+      console.error('[notify/student-cancelled]', coachId, err);
     }
   }
   return sent;
@@ -378,4 +484,148 @@ export async function notifyCoachCreditAdded(input: {
     }
   }
   return sent;
+}
+
+export async function sendLowCreditReminders(): Promise<{ sent: number; skipped: number }> {
+  const packages = await getLowCreditPackages(2);
+  let sent = 0;
+  let skipped = 0;
+
+  for (const p of packages) {
+    const alreadySent = await hasSent(p.userId, 'low_credit_warning', p.id);
+    if (alreadySent) {
+      skipped++;
+      continue;
+    }
+    const user = await getUser(p.userId);
+    const name = user?.alias ?? user?.displayName ?? '學員';
+    const text =
+      `📋 堂數即將用完提醒\n\n` +
+      `${name} 您好！\n` +
+      `您的課程包「${p.title}」剩餘 ${p.remainingCredits} 堂，建議儘早續購，以免影響上課進度。\n\n` +
+      `如需續購請聯繫教練 😊`;
+    try {
+      await pushMessage(p.userId, [{ type: 'text', text }]);
+      await logSent(p.userId, 'low_credit_warning', p.id);
+      sent++;
+    } catch (err) {
+      console.error('[notify/low-credit]', p.userId, err);
+    }
+  }
+  return { sent, skipped };
+}
+
+export async function sendInactiveStudentReminders(): Promise<{ sent: number; skipped: number }> {
+  const students = await listStudentsWithAlias();
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0, 10);
+  const monthKey = todayStr.slice(0, 7);
+  let sent = 0;
+  let skipped = 0;
+
+  for (const s of students) {
+    const pkgs = await getActivePackages(s.lineUserId);
+    if (pkgs.length === 0) continue;
+
+    const totalRemaining = pkgs.reduce((sum, p) => sum + p.remainingCredits, 0);
+    if (totalRemaining <= 0) continue;
+
+    const alreadySent = await hasSent(s.lineUserId, 'inactive_reminder', monthKey);
+    if (alreadySent) {
+      skipped++;
+      continue;
+    }
+
+    const bookings = await getBookingsByUser(s.lineUserId);
+    const validBookings = bookings.filter(
+      (b) => b.status === 'approved' || b.status === 'completed' || b.status === 'pending'
+    );
+    if (validBookings.length > 0) {
+      const lastDate = validBookings[validBookings.length - 1].bookingDate;
+      const diffDays = Math.floor((today.getTime() - new Date(`${lastDate}T00:00:00`).getTime()) / 86400000);
+      if (diffDays < 30) continue;
+    }
+
+    const name = s.alias ?? s.displayName ?? '學員';
+    const text =
+      `👋 好久沒見到您了！\n\n` +
+      `${name} 您好，您已經超過 30 天沒有預約課程了。\n` +
+      `目前還有 ${totalRemaining} 堂課可以使用，快來預約吧！\n\n` +
+      `期待在球場上見到您 ⛳`;
+    try {
+      await pushMessage(s.lineUserId, [{ type: 'text', text }]);
+      await logSent(s.lineUserId, 'inactive_reminder', monthKey);
+      sent++;
+    } catch (err) {
+      console.error('[notify/inactive]', s.lineUserId, err);
+    }
+  }
+  return { sent, skipped };
+}
+
+export async function sendMonthlyRevenueReport(coachUserId: string): Promise<boolean> {
+  const now = new Date();
+  const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const monthLabel = `${lastMonth.getFullYear()}年${lastMonth.getMonth() + 1}月`;
+
+  const packages = await getAllPackagesForRevenue();
+
+  let totalPaid = 0;
+  let totalEarned = 0;
+  let totalUnearned = 0;
+
+  const studentMap: Record<string, { name: string; unearned: number; remaining: number }> = {};
+
+  for (const p of packages) {
+    const price = p.price ?? 0;
+    const unitPrice = p.totalCredits > 0 ? price / p.totalCredits : 0;
+    const used = p.totalCredits - p.remainingCredits;
+    totalPaid += price;
+    totalEarned += Math.round(used * unitPrice);
+    totalUnearned += Math.round(p.remainingCredits * unitPrice);
+
+    if (p.remainingCredits > 0) {
+      if (!studentMap[p.userId]) {
+        const user = await getUser(p.userId);
+        studentMap[p.userId] = {
+          name: user?.alias ?? user?.displayName ?? p.userId,
+          unearned: 0,
+          remaining: 0,
+        };
+      }
+      studentMap[p.userId].unearned += Math.round(p.remainingCredits * unitPrice);
+      studentMap[p.userId].remaining += p.remainingCredits;
+    }
+  }
+
+  const unearnedList = Object.values(studentMap)
+    .filter((s) => s.unearned > 0)
+    .sort((a, b) => b.unearned - a.unearned);
+
+  const fmt = (n: number) => `NT$ ${n.toLocaleString()}`;
+  const lines = [
+    `📊 ${monthLabel} 收入月報`,
+    '',
+    `💰 預收現金總額：${fmt(totalPaid)}`,
+    `✅ 實際收入：${fmt(totalEarned)}`,
+    `⏳ 未消化餘額：${fmt(totalUnearned)}`,
+  ];
+
+  if (unearnedList.length > 0) {
+    lines.push('', `📋 尚有餘額的學員（${unearnedList.length} 位）：`);
+    for (const s of unearnedList.slice(0, 15)) {
+      lines.push(`  ${s.name}：剩 ${s.remaining} 堂（${fmt(s.unearned)}）`);
+    }
+    if (unearnedList.length > 15) {
+      lines.push(`  ...還有 ${unearnedList.length - 15} 位`);
+    }
+  }
+
+  try {
+    await pushMessage(coachUserId, [{ type: 'text', text: lines.join('\n') }]);
+    return true;
+  } catch (err) {
+    console.error('[notify/monthly-revenue]', coachUserId, err);
+    return false;
+  }
 }

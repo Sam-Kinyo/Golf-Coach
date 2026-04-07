@@ -14,6 +14,7 @@ export interface CreditPackage {
   remainingCredits: number;
   validFrom?: string;
   validTo?: string;
+  price?: number;
   status: PackageStatus;
   title: string;
   createdAt: admin.firestore.Timestamp;
@@ -167,4 +168,24 @@ export async function getPackagesExpiringWithinDays(days: number): Promise<(Cred
   return snap.docs
     .map((d) => ({ id: d.id, userId: (d.data() as CreditPackage).userId, ...d.data() } as CreditPackage & { id: string; userId: string }))
     .filter((p) => p.remainingCredits > 0);
+}
+
+export async function getAllPackagesForRevenue(): Promise<(CreditPackage & { id: string })[]> {
+  const snap = await getDb()
+    .collection(COLLECTION)
+    .where('status', 'in', ['active', 'fully_used'])
+    .get();
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as CreditPackage & { id: string }));
+}
+
+export async function getLowCreditPackages(threshold: number): Promise<(CreditPackage & { id: string })[]> {
+  const snap = await getDb()
+    .collection(COLLECTION)
+    .where('status', '==', 'active')
+    .get();
+  const today = new Date().toISOString().slice(0, 10);
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() } as CreditPackage & { id: string }))
+    .filter((p) => !p.validTo || p.validTo >= today)
+    .filter((p) => p.remainingCredits > 0 && p.remainingCredits <= threshold);
 }

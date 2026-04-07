@@ -8,7 +8,7 @@
   <title>高爾夫預約</title>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script>
-    window.APP_VERSION = '20260316-130059';
+    window.APP_VERSION = '20260407-224639';
     (function forceLatestVersion() {
       try {
         const url = new URL(window.location.href);
@@ -113,6 +113,7 @@
       <span class="tab" data-tab="students">學員明細</span>
       <span class="tab" data-tab="schedule">上課時間</span>
       <span class="tab" data-tab="leave">休假設定</span>
+      <span class="tab" data-tab="revenue">收入統計</span>
     </div>
     <div id="credit" class="card">
       <h2>扣課 / 加課</h2>
@@ -122,6 +123,7 @@
       <input type="date" id="creditStartDate" placeholder="起始日期">
       <input type="number" id="creditPrice" placeholder="金額（選填，NT$）">
       <input type="text" id="creditNote" placeholder="備註（方案名稱，選填）">
+      <input type="text" id="creditLessonNote" placeholder="上課內容（扣課時填，例如：練習推桿）">
       <button id="btnCredit">送出</button>
     </div>
     <div id="students" class="card hidden">
@@ -167,6 +169,25 @@
         <div id="fixedScheduleList"></div>
       </div>
     </div>
+    <div id="revenue" class="card hidden">
+      <h2>收入統計</h2>
+      <div id="revenueSummary" style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:16px;">
+        <div style="background:#e8f5e9; border-radius:10px; padding:12px; text-align:center;">
+          <div style="font-size:12px; color:#666;">預收現金</div>
+          <div id="revTotalPaid" style="font-size:20px; font-weight:700; color:#333;">-</div>
+        </div>
+        <div style="background:#e3f2fd; border-radius:10px; padding:12px; text-align:center;">
+          <div style="font-size:12px; color:#666;">實際收入</div>
+          <div id="revEarned" style="font-size:20px; font-weight:700; color:#1976d2;">-</div>
+        </div>
+        <div style="background:#fff3e0; border-radius:10px; padding:12px; text-align:center;">
+          <div style="font-size:12px; color:#666;">未消化餘額</div>
+          <div id="revUnearned" style="font-size:20px; font-weight:700; color:#e65100;">-</div>
+        </div>
+      </div>
+      <div style="font-size:14px; font-weight:700; color:#555; margin-bottom:8px;">學員明細</div>
+      <div id="revenueStudentList"></div>
+    </div>
     <div id="leave" class="card hidden">
       <h2>休假設定</h2>
       <div class="field-hint">開始日期時間</div>
@@ -184,6 +205,7 @@
     <div class="tabs">
       <span class="tab active" data-tab="credits">我的堂數</span>
       <span class="tab" data-tab="bookings">我的預約</span>
+      <span class="tab" data-tab="history">上課紀錄</span>
       <span class="tab" data-tab="new">預約課程</span>
     </div>
     <div id="credits" class="card">
@@ -201,16 +223,39 @@
       </div>
       <div id="bookingList"></div>
     </div>
+    <div id="history" class="card hidden">
+      <h2>上課紀錄</h2>
+      <div id="studentHistoryList"></div>
+    </div>
     <div id="new" class="card hidden">
       <h2>預約課程</h2>
       <select id="locationSelect"><option value="">請選擇地點</option></select>
       <select id="serviceSelect"><option value="">請選擇課程</option></select>
-      <select id="bookingDate"><option value="">選擇日期</option></select>
+      <input type="date" id="bookingDate" placeholder="選擇日期" min="" max="">
       <select id="timeSelect"><option value="">選擇時段</option></select>
       <button id="btnBook">送出預約</button>
     </div>
   </div>
   <div id="toast" class="toast"></div>
+  <div id="rescheduleModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9998;align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:12px;padding:20px;margin:16px;max-width:400px;width:100%;max-height:80vh;overflow-y:auto;">
+      <h2 style="margin:0 0 12px 0;font-size:16px;">預約已取消，要改約嗎？</h2>
+      <div id="rescheduleContent"></div>
+      <div style="margin-top:12px;text-align:right;">
+        <button type="button" class="btn-secondary" onclick="closeRescheduleModal()">不用了</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="coachHistoryPage" class="hidden">
+    <div style="padding:16px;">
+      <button type="button" class="btn-secondary" style="margin-bottom:16px; font-size:14px; padding:8px 16px; border-radius:8px;" onclick="closeCoachHistoryPage()">🔙 返回教練後台</button>
+      <div class="card">
+        <h2 id="coachHistoryPageTitle" style="margin-top:0;">上課紀錄</h2>
+        <div id="coachHistoryPageContent"></div>
+      </div>
+    </div>
+  </div>
 
   <script>
     const API_URL = window.API_URL || window.location.origin || 'http://localhost:8080';
@@ -326,6 +371,9 @@
               <div class="student-total">總剩餘：${s.totalRemaining} 堂</div>
             </div>
             ${pkgHtml}
+            <div style="margin-top:8px; text-align:right;">
+              <button type="button" class="btn-secondary" style="font-size:12px; padding:6px 12px; border-radius:6px; cursor:pointer;" onclick="openCoachHistoryPage('${s.lineUserId}', '${s.label}')">查看紀錄</button>
+            </div>
           </div>
         `;
       }).join('');
@@ -419,7 +467,14 @@
         listDiv.innerHTML = dates.map((date) => {
           const items = grouped[date]
             .sort((a, b) => a.startTime.localeCompare(b.startTime))
-            .map((b) => `<div class="schedule-item"><strong>${b.startTime}</strong>｜${b.studentName}<br>📍 ${b.location} / ${b.service}<br>📌 ${statusText[b.status] || b.status}</div>`)
+            .map((b) => {
+               let cancelBtn = '';
+               if (['pending', 'approved', 'fixed'].includes(b.status)) {
+                 const type = b.status === 'fixed' ? 'fixed' : 'booking';
+                 cancelBtn = `<button class="btn-danger btn-cancel-schedule" style="margin-left:8px;font-size:12px;padding:4px 8px;border-radius:4px" data-type="${type}" data-id="${b.id}" data-date="${b.bookingDate}" data-starttime="${b.startTime}" data-endtime="${b.endTime || ''}">取消</button>`;
+               }
+               return `<div class="schedule-item"><div style="display:flex; justify-content:space-between; align-items:flex-start;"><div><strong>${b.startTime}</strong>｜${b.studentName}</div>${cancelBtn}</div>📍 ${b.location} / ${b.service}<br>📌 ${statusText[b.status] || b.status}</div>`;
+            })
             .join('');
           return `<div class="schedule-date-title">${date}（${grouped[date].length} 筆）</div>${items}`;
         }).join('');
@@ -547,11 +602,12 @@
       document.querySelectorAll('#coachApp .tab').forEach(t => {
         t.addEventListener('click', () => {
           document.querySelectorAll('#coachApp .tab').forEach(x => x.classList.remove('active'));
-          document.querySelectorAll('#credit, #students, #schedule, #leave').forEach(x => x.classList.add('hidden'));
+          document.querySelectorAll('#credit, #students, #schedule, #leave, #revenue').forEach(x => x.classList.add('hidden'));
           t.classList.add('active');
           document.getElementById(t.dataset.tab).classList.remove('hidden');
           if (t.dataset.tab === 'students') loadStudents();
           if (t.dataset.tab === 'schedule') { loadCoachSchedule(); loadFixedSchedules(); }
+          if (t.dataset.tab === 'revenue') loadRevenue();
         });
       });
       document.getElementById('btnReloadStudents').addEventListener('click', () => loadStudents());
@@ -611,6 +667,41 @@
           showToast('請確認網路連線', 'error');
         }
       });
+      document.getElementById('scheduleList').addEventListener('click', async (e) => {
+        if (!e.target.classList.contains('btn-cancel-schedule')) return;
+        const btn = e.target;
+        const type = btn.dataset.type;
+        const id = btn.dataset.id;
+        const date = btn.dataset.date;
+        const startTime = btn.dataset.starttime;
+        const endTime = btn.dataset.endtime;
+
+        if (!confirm('確定要取消這個時段嗎？\n（一般預約會立即取消並通知學員；固定排程則會轉為休假）')) return;
+        
+        btn.disabled = true;
+        btn.textContent = '取消中...';
+        try {
+          const res = await fetch(`${API_URL}/api/liff/cancel-coach-schedule`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ coachUserId: userId, type, id, date, startTime, endTime })
+          });
+          const data = await res.json();
+          if (data.ok) {
+            showToast('取消成功', 'success');
+            await loadCoachSchedule();
+            loadLeaves();
+          } else {
+            showToast(data.error || '取消失敗', 'error');
+            btn.disabled = false;
+            btn.textContent = '取消';
+          }
+        } catch(err) {
+          showToast('請確認網路連線', 'error');
+          btn.disabled = false;
+          btn.textContent = '取消';
+        }
+      });
       document.getElementById('studentSearch').addEventListener('input', (e) => {
         studentSearchKeyword = (e.target.value || '').trim();
         renderStudentDetails();
@@ -623,6 +714,7 @@
         const targetUserId = document.getElementById('studentSelect').value;
         const amount = parseInt(document.getElementById('creditAmount').value, 10);
         const note = document.getElementById('creditNote').value.trim();
+        const lessonNote = document.getElementById('creditLessonNote').value.trim();
         const realName = document.getElementById('creditRealName').value.trim();
         const startDate = document.getElementById('creditStartDate').value;
         const price = document.getElementById('creditPrice').value;
@@ -647,6 +739,7 @@
                 targetUserId,
                 amount: -amount,   // amount is negative, send positive
                 note: note || null,
+                lessonNote: lessonNote || null,
               };
           const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
           const data = await res.json();
@@ -687,6 +780,45 @@
       });
     }
 
+    async function loadRevenue() {
+      const listDiv = document.getElementById('revenueStudentList');
+      listDiv.innerHTML = '<p class="muted">載入收入統計中...</p>';
+      document.getElementById('revTotalPaid').textContent = '-';
+      document.getElementById('revEarned').textContent = '-';
+      document.getElementById('revUnearned').textContent = '-';
+      try {
+        const res = await fetch(`${API_URL}/api/liff/revenue-summary?userId=${encodeURIComponent(userId)}`);
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          listDiv.innerHTML = `<p class="muted">${data.error || '載入失敗'}</p>`;
+          return;
+        }
+        const fmt = (n) => 'NT$ ' + Number(n || 0).toLocaleString();
+        document.getElementById('revTotalPaid').textContent = fmt(data.totals.totalPaid);
+        document.getElementById('revEarned').textContent = fmt(data.totals.earnedIncome);
+        document.getElementById('revUnearned').textContent = fmt(data.totals.unearned);
+        const students = data.students || [];
+        if (!students.length) {
+          listDiv.innerHTML = '<p class="muted">目前沒有課程包資料。</p>';
+          return;
+        }
+        listDiv.innerHTML = students.map(s => {
+          const used = s.usedCredits || 0;
+          const total = s.totalCredits || 0;
+          return `
+            <div class="student-card" style="margin-bottom:8px;">
+              <div class="student-head">
+                <div class="student-name">${s.name}</div>
+                <div class="student-total" style="color:#e65100;">餘 ${fmt(s.unearned)}</div>
+              </div>
+              <div class="pkg-meta">預收 ${fmt(s.totalPaid)} · 已上 ${used}/${total} 堂 · 收入 ${fmt(s.earnedIncome)}</div>
+            </div>`;
+        }).join('');
+      } catch (e) {
+        listDiv.innerHTML = '<p class="muted">網路錯誤，請稍後再試。</p>';
+      }
+    }
+
     async function loadBookingOptions() {
       const res = await fetch(`${API_URL}/api/liff/booking-options`);
       const { locations: locs, services: svcs } = await res.json();
@@ -696,18 +828,17 @@
       const timeSel = document.getElementById('timeSelect');
       locSel.innerHTML = '<option value="">請選擇地點</option>' + (locs || []).map(l => `<option value="${l}">${l}</option>`).join('');
       svcSel.innerHTML = '<option value="">請選擇課程</option>' + (svcs || []).map(s => `<option value="${s}">${s}</option>`).join('');
-      const dateOptions = ['<option value="">選擇日期</option>'];
       const base = new Date();
-      for (let i = 0; i < 90; i++) {
-        const d = new Date(base);
-        d.setDate(base.getDate() + i);
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        const date = `${y}-${m}-${day}`;
-        dateOptions.push(`<option value="${date}">${date}</option>`);
-      }
-      dateSel.innerHTML = dateOptions.join('');
+      const pad = (n) => String(n).padStart(2, '0');
+      const minDateStr = `${base.getFullYear()}-${pad(base.getMonth()+1)}-${pad(base.getDate())}`;
+      
+      const maxBase = new Date(base);
+      maxBase.setDate(maxBase.getDate() + 90);
+      const maxDateStr = `${maxBase.getFullYear()}-${pad(maxBase.getMonth()+1)}-${pad(maxBase.getDate())}`;
+
+      dateSel.min = minDateStr;
+      dateSel.max = maxDateStr;
+
       timeSel.innerHTML = '<option value="">選擇時段</option>';
     }
 
@@ -743,7 +874,11 @@
       }
       const renderCard = (b) => {
         const st = statusText[b.status] || b.status;
-        return `<div class="booking-item"><strong>${b.bookingDate} ${b.startTime}</strong><br>📍 ${b.location} / ${b.service}<br>📌 ${st}</div>`;
+        let cancelBtn = '';
+        if (b.status === 'pending' || b.status === 'approved') {
+          cancelBtn = `<button class="btn-danger btn-student-cancel" data-id="${b.id}" style="float:right; font-size:12px; padding:4px 8px; border-radius:4px; cursor:pointer;">取消預約</button>`;
+        }
+        return `<div class="booking-item">${cancelBtn}<strong>${b.bookingDate} ${b.startTime}</strong><br>📍 ${b.location} / ${b.service}<br>📌 ${st}</div>`;
       };
       const renderSection = (key, title, items) => {
         if (!items.length) return '';
@@ -827,10 +962,11 @@
       document.querySelectorAll('#studentApp .tab').forEach(t => {
         t.addEventListener('click', () => {
           document.querySelectorAll('#studentApp .tab').forEach(x => x.classList.remove('active'));
-          document.querySelectorAll('#credits, #bookings, #new').forEach(x => x.classList.add('hidden'));
+          document.querySelectorAll('#credits, #bookings, #history, #new').forEach(x => x.classList.add('hidden'));
           t.classList.add('active');
           document.getElementById(t.dataset.tab).classList.remove('hidden');
           if (t.dataset.tab === 'new') loadAvailableSlots();
+          if (t.dataset.tab === 'history') loadStudentHistory(userId, 'studentHistoryList');
         });
       });
       document.getElementById('bookingDate').addEventListener('change', loadAvailableSlots);
@@ -843,14 +979,49 @@
           renderBookings();
         });
       });
-      document.getElementById('bookingList').addEventListener('click', (e) => {
+      document.getElementById('bookingList').addEventListener('click', async (e) => {
         const target = e.target;
         if (!(target instanceof HTMLElement)) return;
-        if (!target.classList.contains('booking-toggle-btn')) return;
-        const key = target.dataset.section;
-        if (!key) return;
-        bookingSectionCollapsed[key] = !bookingSectionCollapsed[key];
-        renderBookings();
+        
+        if (target.classList.contains('booking-toggle-btn')) {
+          const key = target.dataset.section;
+          if (!key) return;
+          bookingSectionCollapsed[key] = !bookingSectionCollapsed[key];
+          renderBookings();
+          return;
+        }
+
+        if (target.classList.contains('btn-student-cancel')) {
+          const bookingId = target.dataset.id;
+          if (!bookingId) return;
+          if (!confirm('確定要取消這筆預約嗎？\n取消後系統會自動通知教練。')) return;
+
+          target.disabled = true;
+          target.textContent = '處理中...';
+          try {
+            const res = await fetch(`${API_URL}/api/liff/cancel-booking`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId, bookingId })
+            });
+            const data = await res.json();
+            if (data.ok) {
+              showToast('預約已取消成功', 'success');
+              loadBookings();
+              if (data.rescheduleSlots && data.rescheduleSlots.length > 0) {
+                showRescheduleModal(data.rescheduleSlots);
+              }
+            } else {
+              showToast(data.error || '取消失敗', 'error');
+              target.disabled = false;
+              target.textContent = '取消預約';
+            }
+          } catch(err) {
+            showToast('連線失敗，請重試', 'error');
+            target.disabled = false;
+            target.textContent = '取消預約';
+          }
+        }
       });
 
       function closeWindowAfterSuccess() {
@@ -880,6 +1051,138 @@
           } else showToast(data.error || '預約失敗', 'error');
         } catch (e) { showToast('請確認網路連線', 'error'); }
       });
+    }
+
+    async function loadStudentHistory(targetUserId, renderTargetId) {
+      const listDiv = document.getElementById(renderTargetId);
+      listDiv.innerHTML = '<p class="muted">載入紀錄中...</p>';
+      try {
+        const res = await fetch(`${API_URL}/api/liff/student-history?userId=${encodeURIComponent(userId)}&targetUserId=${encodeURIComponent(targetUserId)}`);
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          listDiv.innerHTML = `<p class="muted">${data.error || '載入失敗'}</p>`;
+          return;
+        }
+        
+        const { packages, historyBookings } = data;
+        let html = '';
+        
+        const totalRemaining = packages.reduce((sum, p) => sum + p.remainingCredits, 0);
+        html += `<div style="margin-bottom:16px; font-weight:bold; color:#06c755; font-size:16px;">🎯 總剩餘：${totalRemaining} 堂</div>`;
+        
+        if (!historyBookings || !historyBookings.length) {
+          html += '<p class="muted">尚無完課歷史紀錄</p>';
+        } else {
+          const grouped = historyBookings.reduce((acc, b) => {
+            const month = b.bookingDate.substring(0, 7);
+            if (!acc[month]) acc[month] = [];
+            acc[month].push(b);
+            return acc;
+          }, {});
+          
+          Object.keys(grouped).sort().reverse().forEach(month => {
+            html += `<div style="font-size:14px; font-weight:bold; color:#555; margin:16px 0 8px 0;">${month.replace('-','年')}月 (共 ${grouped[month].length} 筆)</div>`;
+            grouped[month].forEach(b => {
+               html += `
+                <div class="pkg-line" style="margin-bottom:8px;">
+                  <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                    <strong>${b.bookingDate} ${b.startTime}</strong>
+                    <span style="font-size:12px; color:#999; border:1px solid #ddd; padding:2px 6px; border-radius:4px;">已完課</span>
+                  </div>
+                  <div style="color:#666; font-size:13px;">📍 ${b.location} / ${b.service}</div>
+                </div>`;
+            });
+          });
+        }
+        listDiv.innerHTML = html;
+      } catch (err) {
+        listDiv.innerHTML = '<p class="muted">網路錯誤，無法載入紀錄</p>';
+      }
+    }
+
+    function openCoachHistoryPage(studentId, studentName) {
+      document.getElementById('coachApp').classList.add('hidden');
+      document.getElementById('coachHistoryPage').classList.remove('hidden');
+      document.getElementById('coachHistoryPageTitle').textContent = studentName + ' 的上課紀錄';
+      document.getElementById('coachHistoryPageContent').innerHTML = '<p class="muted">載入中...</p>';
+      loadStudentHistory(studentId, 'coachHistoryPageContent');
+      window.scrollTo(0, 0);
+    }
+
+    function closeCoachHistoryPage() {
+      document.getElementById('coachHistoryPage').classList.add('hidden');
+      document.getElementById('coachApp').classList.remove('hidden');
+    }
+
+    let rescheduleService = '';
+    let rescheduleLocation = '';
+
+    function showRescheduleModal(slots) {
+      const modal = document.getElementById('rescheduleModal');
+      const content = document.getElementById('rescheduleContent');
+      const formatSlot = (time) => {
+        const h = parseInt((time || '00:00').split(':')[0], 10);
+        return `${time}-${String(h + 1).padStart(2, '0')}:00`;
+      };
+      content.innerHTML = slots.map(day =>
+        `<div style="margin-bottom:12px;">
+          <div style="font-weight:700; font-size:14px; color:#555; margin-bottom:6px;">${day.date}</div>
+          <div style="display:flex; flex-wrap:wrap; gap:6px;">
+            ${day.slots.map(t =>
+              `<button type="button" class="btn-reschedule" data-date="${day.date}" data-time="${t}" style="padding:6px 12px; border:1px solid #06c755; background:#fff; color:#06c755; border-radius:8px; font-size:13px; cursor:pointer;">${formatSlot(t)}</button>`
+            ).join('')}
+          </div>
+        </div>`
+      ).join('');
+      modal.classList.remove('hidden');
+      modal.style.display = 'flex';
+      content.addEventListener('click', handleRescheduleClick);
+    }
+
+    function closeRescheduleModal() {
+      const modal = document.getElementById('rescheduleModal');
+      modal.classList.add('hidden');
+      modal.style.display = 'none';
+      document.getElementById('rescheduleContent').removeEventListener('click', handleRescheduleClick);
+    }
+
+    async function handleRescheduleClick(e) {
+      const btn = e.target;
+      if (!btn.classList.contains('btn-reschedule')) return;
+      const bookingDate = btn.dataset.date;
+      const startTime = btn.dataset.time;
+      if (!bookingDate || !startTime) return;
+
+      const location = document.getElementById('locationSelect')?.value || '';
+      const service = document.getElementById('serviceSelect')?.value || '';
+
+      if (!location || !service) {
+        if (!confirm(`要預約 ${bookingDate} ${startTime} 嗎？\n（將使用預設地點與課程）`)) return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = '預約中...';
+      try {
+        const res = await fetch(`${API_URL}/api/liff/create-booking`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId, bookingDate, startTime, location: location || '待確認', service: service || '待確認' })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showToast('改約成功！已送出新預約', 'success');
+          closeRescheduleModal();
+          loadBookings();
+        } else {
+          showToast(data.error || '預約失敗', 'error');
+          btn.disabled = false;
+          btn.textContent = startTime;
+        }
+      } catch (err) {
+        showToast('連線失敗，請重試', 'error');
+        btn.disabled = false;
+        btn.textContent = startTime;
+      }
     }
 
     init();
