@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { getDb, admin } from '../config/firebase';
 import { getOrCreateUser, getUser, listStudentsWithAlias, setAlias } from '../services/user';
 import { getActivePackages, addCredits, deductCredits, getAllPackagesForRevenue } from '../services/package';
 import { addLeave, listLeaves } from '../services/coachLeave';
@@ -272,6 +273,25 @@ export async function liffRoutes(app: FastifyInstance): Promise<void> {
     } catch (err: any) {
       return reply.status(400).send({ ok: false, error: err.message ?? '扣課失敗' });
     }
+    // 扣課時同時建立 completed booking 紀錄，讓上課紀錄查得到
+    const deductDate = getDateInTaipei();
+    const nowTs = admin.firestore.FieldValue.serverTimestamp();
+    for (let i = 0; i < deductAmount; i++) {
+      await getDb().collection('bookings').add({
+        userId: targetUserId,
+        bookingDate: deductDate,
+        startTime: '00:00',
+        endTime: '01:00',
+        location: lessonNote || '手動扣課',
+        service: note || '手動扣課',
+        status: 'completed',
+        creditsUsed: 1,
+        cancelReason: null,
+        createdAt: nowTs,
+        updatedAt: nowTs,
+      });
+    }
+
     const studentUser = await getOrCreateUser(targetUserId);
     const studentDisplayName = studentUser?.displayName || undefined;
     const displayNote = lessonNote ? `${note || ''}${note ? ' · ' : ''}上課內容：${lessonNote}` : (note || undefined);
@@ -329,7 +349,11 @@ export async function liffRoutes(app: FastifyInstance): Promise<void> {
     if (!userId || !isCoach(userId)) {
       return reply.status(403).send({ error: 'Forbidden' });
     }
-    const packages = await getAllPackagesForRevenue();
+    const from = (req.query as any).from || '';
+    const to = (req.query as any).to || '';
+    let packages = await getAllPackagesForRevenue();
+    if (from) packages = packages.filter(p => (p.validFrom ?? '') >= from);
+    if (to) packages = packages.filter(p => (p.validFrom ?? '') <= to);
     const studentMap: Record<string, {
       name: string;
       totalPaid: number;

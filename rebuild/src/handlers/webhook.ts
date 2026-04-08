@@ -3,7 +3,7 @@ import { replyMessage, replyButtons, isCoach, getLineClient } from '../services/
 import { getBookingsByUser, getBookingsByDate, getBooking, approveBooking, rejectBooking, cancelBooking } from '../services/booking';
 import { getActivePackages } from '../services/package';
 import { env } from '../config/env';
-import { getUser } from '../services/user';
+import { getUser, setAlias, getOrCreateUser } from '../services/user';
 import { notifyStudentBookingApproved, notifyStudentBookingRejected, notifyCoachesStudentCancelled } from '../services/notification';
 import { getFixedSessionsOnDate } from '../services/fixedSchedule';
 
@@ -218,7 +218,30 @@ async function handleCoachMessage(userId: string, text: string, replyToken: stri
   }
 }
 
+const pendingNameSet = new Set<string>();
+
 async function handleStudentMessage(userId: string, text: string, replyToken: string): Promise<void> {
+  // 如果正在等待輸入本名
+  if (pendingNameSet.has(userId)) {
+    const name = text.trim();
+    if (name.length >= 2 && name.length <= 20) {
+      await setAlias(userId, name);
+      pendingNameSet.delete(userId);
+      await replyMessage(replyToken, `✅ 已記錄您的本名：${name}\n\n歡迎使用高爾夫預約系統！輸入「使用教學」查看功能說明。`);
+      return;
+    }
+    pendingNameSet.delete(userId);
+  }
+
+  // 確保 user 存在，沒有的話先建立
+  const user = await getOrCreateUser(userId);
+  // 檢查是否有設定本名，沒有的話請學員輸入
+  if (!user.alias) {
+    pendingNameSet.add(userId);
+    await replyMessage(replyToken, '👋 您好！第一次使用請先輸入您的本名（中文全名），方便教練辨識您。');
+    return;
+  }
+
   if (text === '使用教學' || text === 'help' || text === '說明') {
     if (LIFF_STUDENT_URL) {
       await replyButtons(

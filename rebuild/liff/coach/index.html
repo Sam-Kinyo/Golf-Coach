@@ -8,7 +8,7 @@
   <title>高爾夫預約</title>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script>
-    window.APP_VERSION = '20260407-224639';
+    window.APP_VERSION = '20260408-201552';
     (function forceLatestVersion() {
       try {
         const url = new URL(window.location.href);
@@ -109,22 +109,30 @@
   <div id="loading">載入中...</div>
   <div id="coachApp" class="hidden">
     <div class="tabs">
-      <span class="tab active" data-tab="credit">扣課/加課</span>
+      <span class="tab active" data-tab="deduct">扣課</span>
+      <span class="tab" data-tab="addcredit">加課</span>
       <span class="tab" data-tab="students">學員明細</span>
       <span class="tab" data-tab="schedule">上課時間</span>
       <span class="tab" data-tab="leave">休假設定</span>
       <span class="tab" data-tab="revenue">收入統計</span>
     </div>
-    <div id="credit" class="card">
-      <h2>扣課 / 加課</h2>
-      <select id="studentSelect"><option value="">請選擇學員</option></select>
-      <input type="number" id="creditAmount" placeholder="堂數（正數加課、負數扣課）">
-      <input type="text" id="creditRealName" placeholder="本名（加課時填，用於核銷）">
-      <input type="date" id="creditStartDate" placeholder="起始日期">
-      <input type="number" id="creditPrice" placeholder="金額（選填，NT$）">
-      <input type="text" id="creditNote" placeholder="備註（方案名稱，選填）">
-      <input type="text" id="creditLessonNote" placeholder="上課內容（扣課時填，例如：練習推桿）">
-      <button id="btnCredit">送出</button>
+    <div id="deduct" class="card">
+      <h2>扣課</h2>
+      <select id="deductStudentSelect"><option value="">請選擇學員</option></select>
+      <input type="number" id="deductAmount" placeholder="扣課堂數" min="1">
+      <input type="text" id="deductLessonNote" placeholder="上課內容（例如：練習推桿）">
+      <input type="text" id="deductNote" placeholder="備註（選填）">
+      <button id="btnDeduct">扣課</button>
+    </div>
+    <div id="addcredit" class="card hidden">
+      <h2>加課（開課）</h2>
+      <select id="addStudentSelect"><option value="">請選擇學員</option></select>
+      <input type="number" id="addAmount" placeholder="堂數" min="1">
+      <input type="text" id="addRealName" placeholder="本名（用於核銷）">
+      <input type="date" id="addStartDate" placeholder="起始日期">
+      <input type="number" id="addPrice" placeholder="金額（NT$）">
+      <input type="text" id="addNote" placeholder="方案名稱（選填）">
+      <button id="btnAddCredit">開課</button>
     </div>
     <div id="students" class="card hidden">
       <h2>學員明細</h2>
@@ -171,6 +179,12 @@
     </div>
     <div id="revenue" class="card hidden">
       <h2>收入統計</h2>
+      <div class="schedule-toolbar" style="margin-bottom:12px;">
+        <input type="date" id="revenueFrom" style="flex:1;min-width:130px;">
+        <input type="date" id="revenueTo" style="flex:1;min-width:130px;">
+        <button type="button" id="btnSearchRevenue" class="btn-secondary">查詢區間</button>
+        <button type="button" id="btnRevenueAll" class="btn-secondary">全部</button>
+      </div>
       <div id="revenueSummary" style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:16px;">
         <div style="background:#e8f5e9; border-radius:10px; padding:12px; text-align:center;">
           <div style="font-size:12px; color:#666;">預收現金</div>
@@ -381,18 +395,20 @@
 
     async function loadStudents() {
       const listDiv = document.getElementById('studentList');
-      const sel = document.getElementById('studentSelect');
+      const deductSel = document.getElementById('deductStudentSelect');
+      const addSel = document.getElementById('addStudentSelect');
       listDiv.innerHTML = '<p class="muted">載入學員資料中...</p>';
       try {
         const res = await fetch(`${API_URL}/api/liff/students?userId=${userId}`);
         const { students } = await res.json();
-        sel.innerHTML = '<option value="">請選擇學員</option>';
+        const optionsHtml = '<option value="">請選擇學員</option>';
+        deductSel.innerHTML = optionsHtml;
+        addSel.innerHTML = optionsHtml;
         const rows = (students || []).map(s => {
           const label = s.alias || s.displayName || s.lineUserId;
-          const opt = document.createElement('option');
-          opt.value = s.lineUserId;
-          opt.textContent = `${label} (${s.lineUserId.slice(0, 8)}...)`;
-          sel.appendChild(opt);
+          const optText = `${label} (${s.lineUserId.slice(0, 8)}...)`;
+          deductSel.appendChild(Object.assign(document.createElement('option'), { value: s.lineUserId, textContent: optText }));
+          addSel.appendChild(Object.assign(document.createElement('option'), { value: s.lineUserId, textContent: optText }));
           return {
             lineUserId: s.lineUserId,
             label,
@@ -602,16 +618,18 @@
       document.querySelectorAll('#coachApp .tab').forEach(t => {
         t.addEventListener('click', () => {
           document.querySelectorAll('#coachApp .tab').forEach(x => x.classList.remove('active'));
-          document.querySelectorAll('#credit, #students, #schedule, #leave, #revenue').forEach(x => x.classList.add('hidden'));
+          document.querySelectorAll('#deduct, #addcredit, #students, #schedule, #leave, #revenue').forEach(x => x.classList.add('hidden'));
           t.classList.add('active');
           document.getElementById(t.dataset.tab).classList.remove('hidden');
           if (t.dataset.tab === 'students') loadStudents();
           if (t.dataset.tab === 'schedule') { loadCoachSchedule(); loadFixedSchedules(); }
-          if (t.dataset.tab === 'revenue') loadRevenue();
+          if (t.dataset.tab === 'revenue') loadRevenue(document.getElementById('revenueFrom').value, document.getElementById('revenueTo').value);
         });
       });
       document.getElementById('btnReloadStudents').addEventListener('click', () => loadStudents());
       document.getElementById('btnSearchSchedule').addEventListener('click', () => loadCoachSchedule());
+      document.getElementById('btnSearchRevenue').addEventListener('click', () => loadRevenue(document.getElementById('revenueFrom').value, document.getElementById('revenueTo').value));
+      document.getElementById('btnRevenueAll').addEventListener('click', () => { document.getElementById('revenueFrom').value = ''; document.getElementById('revenueTo').value = ''; loadRevenue(); });
       document.getElementById('btnAddFixed').addEventListener('click', async () => {
         const weekday = document.getElementById('fixedWeekday').value;
         const startTime = document.getElementById('fixedStartTime').value;
@@ -710,54 +728,56 @@
         onlyWithRemaining = !!e.target.checked;
         renderStudentDetails();
       });
-      document.getElementById('btnCredit').addEventListener('click', async () => {
-        const targetUserId = document.getElementById('studentSelect').value;
-        const amount = parseInt(document.getElementById('creditAmount').value, 10);
-        const note = document.getElementById('creditNote').value.trim();
-        const lessonNote = document.getElementById('creditLessonNote').value.trim();
-        const realName = document.getElementById('creditRealName').value.trim();
-        const startDate = document.getElementById('creditStartDate').value;
-        const price = document.getElementById('creditPrice').value;
-        if (!targetUserId || !amount) { showToast('請選擇學員並輸入堂數', 'error'); return; }
-        document.getElementById('btnCredit').disabled = true;
-        const isAdd = amount > 0;
+      document.getElementById('btnDeduct').addEventListener('click', async () => {
+        const targetUserId = document.getElementById('deductStudentSelect').value;
+        const amount = parseInt(document.getElementById('deductAmount').value, 10);
+        const lessonNote = document.getElementById('deductLessonNote').value.trim();
+        const note = document.getElementById('deductNote').value.trim();
+        if (!targetUserId || !amount || amount <= 0) { showToast('請選擇學員並輸入扣課堂數', 'error'); return; }
+        document.getElementById('btnDeduct').disabled = true;
         try {
-          const url = isAdd ? `${API_URL}/api/liff/add-credits` : `${API_URL}/api/liff/deduct-credits`;
-          const body = isAdd
-            ? {
-                coachUserId: userId,
-                targetUserId,
-                credits: amount,
-                title: note || '手動加課',
-                validTo: null,
-                validFrom: startDate || null,
-                realName: realName || null,
-                price: price ? Number(price) : null,
-              }
-            : {
-                coachUserId: userId,
-                targetUserId,
-                amount: -amount,   // amount is negative, send positive
-                note: note || null,
-                lessonNote: lessonNote || null,
-              };
-          const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          const res = await fetch(`${API_URL}/api/liff/deduct-credits`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ coachUserId: userId, targetUserId, amount, note: note || null, lessonNote: lessonNote || null })
+          });
           const data = await res.json();
           if (data.ok) {
-            const msg = isAdd
-              ? '開課成功！已通知學員\n即將關閉視窗…'
-              : `扣課成功！剩餘 ${data.remaining} 堂\n即將關閉視窗…`;
-            showToast(msg, 'success', 2200);
-            setTimeout(() => {
-              try { if (liff.isInClient()) liff.closeWindow(); } catch(e) {}
-            }, 1800);
+            showToast(`扣課成功！剩餘 ${data.remaining} 堂\n即將關閉視窗…`, 'success', 2200);
+            setTimeout(() => { try { if (liff.isInClient()) liff.closeWindow(); } catch(e) {} }, 1800);
           } else {
-            showToast(data.error || '送出失敗，請重試', 'error');
-            document.getElementById('btnCredit').disabled = false;
+            showToast(data.error || '扣課失敗', 'error');
+            document.getElementById('btnDeduct').disabled = false;
           }
         } catch (e) {
           showToast('請確認網路連線', 'error');
-          document.getElementById('btnCredit').disabled = false;
+          document.getElementById('btnDeduct').disabled = false;
+        }
+      });
+      document.getElementById('btnAddCredit').addEventListener('click', async () => {
+        const targetUserId = document.getElementById('addStudentSelect').value;
+        const credits = parseInt(document.getElementById('addAmount').value, 10);
+        const realName = document.getElementById('addRealName').value.trim();
+        const startDate = document.getElementById('addStartDate').value;
+        const price = document.getElementById('addPrice').value;
+        const note = document.getElementById('addNote').value.trim();
+        if (!targetUserId || !credits || credits <= 0) { showToast('請選擇學員並輸入堂數', 'error'); return; }
+        document.getElementById('btnAddCredit').disabled = true;
+        try {
+          const res = await fetch(`${API_URL}/api/liff/add-credits`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ coachUserId: userId, targetUserId, credits, title: note || '手動加課', validTo: null, validFrom: startDate || null, realName: realName || null, price: price ? Number(price) : null })
+          });
+          const data = await res.json();
+          if (data.ok) {
+            showToast('開課成功！已通知學員\n即將關閉視窗…', 'success', 2200);
+            setTimeout(() => { try { if (liff.isInClient()) liff.closeWindow(); } catch(e) {} }, 1800);
+          } else {
+            showToast(data.error || '開課失敗', 'error');
+            document.getElementById('btnAddCredit').disabled = false;
+          }
+        } catch (e) {
+          showToast('請確認網路連線', 'error');
+          document.getElementById('btnAddCredit').disabled = false;
         }
       });
       document.getElementById('btnLeave').addEventListener('click', async () => {
@@ -780,14 +800,17 @@
       });
     }
 
-    async function loadRevenue() {
+    async function loadRevenue(fromDate, toDate) {
       const listDiv = document.getElementById('revenueStudentList');
       listDiv.innerHTML = '<p class="muted">載入收入統計中...</p>';
       document.getElementById('revTotalPaid').textContent = '-';
       document.getElementById('revEarned').textContent = '-';
       document.getElementById('revUnearned').textContent = '-';
       try {
-        const res = await fetch(`${API_URL}/api/liff/revenue-summary?userId=${encodeURIComponent(userId)}`);
+        let url = `${API_URL}/api/liff/revenue-summary?userId=${encodeURIComponent(userId)}`;
+        if (fromDate) url += `&from=${encodeURIComponent(fromDate)}`;
+        if (toDate) url += `&to=${encodeURIComponent(toDate)}`;
+        const res = await fetch(url);
         const data = await res.json();
         if (!res.ok || data.error) {
           listDiv.innerHTML = `<p class="muted">${data.error || '載入失敗'}</p>`;

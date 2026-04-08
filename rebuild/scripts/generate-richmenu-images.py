@@ -61,7 +61,7 @@ def draw_golf_icon(draw: ImageDraw.ImageDraw, idx: int, cx: int, top: int):
 def draw_menu(labels, output_path: Path):
     img = Image.new("RGB", (WIDTH, HEIGHT), BG_TOP)
     draw = ImageDraw.Draw(img)
-    font = get_font(86)
+    font = get_font(120)
     small = get_font(38)
 
     # Soft vertical gradient background
@@ -73,19 +73,19 @@ def draw_menu(labels, output_path: Path):
         draw.line((0, y, WIDTH, y), fill=(r, g, b))
 
     draw.rounded_rectangle((26, 26, WIDTH - 26, HEIGHT - 26), radius=42, outline=(205, 216, 228), width=3)
-    draw.text((44, 44), "常用功能", font=small, fill=SUB)
 
     for i, label in enumerate(labels):
         x0 = i * BTN_W + 22
         x1 = (i + 1) * BTN_W - 22
-        y0, y1 = 128, 772
+        y0, y1 = 60, 780
         draw.rounded_rectangle((x0, y0, x1, y1), radius=54, fill=BTN, outline=BTN_BORDER, width=3)
         cx = (x0 + x1) // 2
-        draw_golf_icon(draw, i, cx, y0)
+        cy = (y0 + y1) // 2
         bbox = draw.textbbox((0, 0), label, font=font)
         tw = bbox[2] - bbox[0]
-        tx = x0 + (x1 - x0 - tw) / 2
-        ty = y0 + 258
+        th = bbox[3] - bbox[1]
+        tx = cx - tw / 2
+        ty = cy - th / 2
         draw.text((tx, ty), label, font=font, fill=TEXT)
 
     img.save(output_path, "PNG")
