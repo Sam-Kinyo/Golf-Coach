@@ -90,19 +90,20 @@ export async function liffRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/liff/available-slots', async (req, reply) => {
     const date = (req.query as any).date;
     const service = (req.query as any).service;
+    const duration = Number((req.query as any).duration) || 0;
     if (!date) return reply.status(400).send({ error: 'Missing date' });
-    const slotStatus = await getSlotStatuses(date, service);
+    const slotStatus = await getSlotStatuses(date, service, duration || undefined);
     const slots = slotStatus.filter((s) => s.available).map((s) => s.time);
     return { slots, slotStatus };
   });
 
   app.post('/api/liff/create-booking', async (req, reply) => {
     const body = req.body as any;
-    const { userId, bookingDate, startTime, location, service } = body;
+    const { userId, bookingDate, startTime, location, service, duration } = body;
     if (!userId || !bookingDate || !startTime || !location || !service) {
       return reply.status(400).send({ error: 'Missing required fields' });
     }
-    const id = await createBooking(userId, bookingDate, startTime, location, service);
+    const id = await createBooking(userId, bookingDate, startTime, location, service, Number(duration) || undefined);
     const payload = {
       bookingId: id,
       userId,
@@ -110,6 +111,7 @@ export async function liffRoutes(app: FastifyInstance): Promise<void> {
       startTime,
       location,
       service,
+      duration: Number(duration) || 1,
     };
     const [coachNotified, studentNotified] = await Promise.all([
       notifyCoachesNewBooking(payload),
@@ -330,7 +332,42 @@ export async function liffRoutes(app: FastifyInstance): Promise<void> {
     } catch (err: any) {
       return reply.status(400).send({ error: err.message ?? '新增休假失敗' });
     }
-    return { ok: true, id };
+
+    // 自動取消休假時段內的預約並通知學員
+    let cancelledCount = 0;
+    try {
+      const leaveStart = new Date(`${startDate}T${startTime}:00`);
+      const leaveEnd = new Date(`${endDate}T${endTime}:00`);
+      // 查詢休假期間每天的預約
+      const current = new Date(leaveStart);
+      while (current <= leaveEnd) {
+        const dateStr = current.toISOString().slice(0, 10);
+        const dayBookings = await getBookingsByDateRange(dateStr, dateStr);
+        for (const b of dayBookings) {
+          if (b.status !== 'pending' && b.status !== 'approved') continue;
+          const bStart = new Date(`${b.bookingDate}T${b.startTime}:00`);
+          const bEnd = new Date(`${b.bookingDate}T${b.endTime}:00`);
+          if (bStart < leaveEnd && bEnd > leaveStart) {
+            await cancelBooking(b.id, note ? `教練休假：${note}` : '教練臨時休假');
+            await notifyStudentBookingRejected({
+              bookingId: b.id,
+              userId: b.userId,
+              bookingDate: b.bookingDate,
+              startTime: b.startTime,
+              location: b.location,
+              service: b.service,
+              reason: note ? `教練臨時休假：${note}` : '教練臨時休假',
+            });
+            cancelledCount++;
+          }
+        }
+        current.setDate(current.getDate() + 1);
+      }
+    } catch (err) {
+      console.error('[coach-leave] auto-cancel error:', err);
+    }
+
+    return { ok: true, id, cancelledCount };
   });
 
   app.get('/api/liff/coach-leaves', async (req, reply) => {
@@ -342,6 +379,21 @@ export async function liffRoutes(app: FastifyInstance): Promise<void> {
     }
     const leaves = await listLeaves(fromDate, toDate);
     return { leaves };
+  });
+
+  app.delete('/api/liff/coach-leave', async (req, reply) => {
+    const userId = (req.query as any).userId;
+    const leaveId = (req.query as any).id;
+    if (!userId || !isCoach(userId)) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+    if (!leaveId) return reply.status(400).send({ error: '缺少休假 ID' });
+    try {
+      await getDb().collection('coach_leaves').doc(leaveId).delete();
+      return { ok: true };
+    } catch (err: any) {
+      return reply.status(500).send({ error: err.message ?? '刪除失敗' });
+    }
   });
 
   app.get('/api/liff/revenue-summary', async (req, reply) => {
@@ -419,7 +471,8 @@ export async function liffRoutes(app: FastifyInstance): Promise<void> {
         if (!date || !startTime || !endTime) {
           return reply.status(400).send({ error: '缺少固定班日期或時間' });
         }
-        await addLeave(date, startTime, date, endTime, '取消固定排班');
+        const { cancelFixedSession } = require('../services/fixedSchedule');
+        await cancelFixedSession(date, startTime, endTime);
         return { ok: true };
       } else if (type === 'booking') {
         if (!id) return reply.status(400).send({ error: '缺少預約 ID' });
@@ -479,6 +532,37 @@ export async function liffRoutes(app: FastifyInstance): Promise<void> {
       return { ok: true, rescheduleSlots };
     } catch (err: any) {
       return reply.status(500).send({ error: err.message ?? '取消失敗' });
+    }
+  });
+
+  // ========== 教練刪除學員 ==========
+  app.post('/api/liff/delete-student', async (req, reply) => {
+    const { coachUserId, targetUserId } = req.body as any;
+    if (!coachUserId || !isCoach(coachUserId)) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+    if (!targetUserId) return reply.status(400).send({ error: '缺少學員 ID' });
+
+    try {
+      const db = getDb();
+      // 刪除 user
+      await db.collection('users').doc(targetUserId).delete();
+      // 刪除 bookings
+      const bookings = await db.collection('bookings').where('userId', '==', targetUserId).get();
+      for (const doc of bookings.docs) { await doc.ref.delete(); }
+      // 刪除 packages
+      const packages = await db.collection('packages').where('userId', '==', targetUserId).get();
+      for (const doc of packages.docs) { await doc.ref.delete(); }
+      // 刪除 transactions
+      const txs = await db.collection('credit_transactions').where('userId', '==', targetUserId).get();
+      for (const doc of txs.docs) { await doc.ref.delete(); }
+      // 刪除 notifications log
+      const notifs = await db.collection('notifications_log').where('userId', '==', targetUserId).get();
+      for (const doc of notifs.docs) { await doc.ref.delete(); }
+
+      return { ok: true, deleted: { bookings: bookings.size, packages: packages.size, transactions: txs.size } };
+    } catch (err: any) {
+      return reply.status(500).send({ error: err.message ?? '刪除失敗' });
     }
   });
 }

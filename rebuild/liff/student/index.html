@@ -8,7 +8,7 @@
   <title>學員專區</title>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script>
-    window.APP_VERSION = '20260408-201552';
+    window.APP_VERSION = '20260409-165101';
     (function forceLatestVersion() {
       try {
         const url = new URL(window.location.href);
@@ -108,6 +108,12 @@
       <h2>預約課程</h2>
       <select id="locationSelect"><option value="">請選擇地點</option></select>
       <select id="serviceSelect"><option value="">請選擇課程</option></select>
+      <select id="durationSelect">
+        <option value="1">1 小時</option>
+        <option value="2">2 小時</option>
+        <option value="3">3 小時</option>
+        <option value="4">4 小時</option>
+      </select>
       <select id="bookingDate"><option value="">選擇日期</option></select>
       <select id="timeSelect"><option value="">選擇時段</option></select>
       <button id="btnBook">送出預約</button>
@@ -279,7 +285,8 @@
         return;
       }
       const service = document.getElementById('serviceSelect').value;
-      const res = await fetch(`${API_URL}/api/liff/available-slots?date=${encodeURIComponent(date)}&service=${encodeURIComponent(service || '')}`);
+      const dur = document.getElementById('durationSelect').value || '1';
+      const res = await fetch(`${API_URL}/api/liff/available-slots?date=${encodeURIComponent(date)}&service=${encodeURIComponent(service || '')}&duration=${dur}`);
       const data = await res.json();
       const { slots, slotStatus, error } = data || {};
       const sel = document.getElementById('timeSelect');
@@ -287,10 +294,11 @@
         sel.innerHTML = '<option value="">時段載入失敗，請重試</option>';
         return;
       }
+      const d = parseInt(dur, 10) || 1;
       const formatSlotLabel = (time) => {
         const h = parseInt((time || '00:00').split(':')[0], 10);
-        const next = String(h + 1).padStart(2, '0') + ':00';
-        return `${time}-${next}`;
+        const end = String(h + d).padStart(2, '0') + ':00';
+        return `${time}-${end}`;
       };
       const statuses = Array.isArray(slotStatus) ? slotStatus : (slots || []).map(s => ({ time: s, available: true }));
       const options = statuses.map(s => {
@@ -298,7 +306,7 @@
         if (s.available) return `<option value="${s.time}">${label}</option>`;
         if (s.reason === 'booked') return `<option value="${s.time}" disabled>${label}（教練於${s.location || '其他地點'}上課中）</option>`;
         if (s.reason === 'outside_hours') return `<option value="${s.time}" disabled>${label}（超出課程可預約時段）</option>`;
-        return `<option value="${s.time}" disabled>${label}（教練休假）</option>`;
+        return `<option value="${s.time}" disabled>${label}（${s.leaveNote || '教練休假'}）</option>`;
       });
       sel.innerHTML = '<option value="">選擇時段</option>' + options.join('');
     }
@@ -316,6 +324,7 @@
 
       document.getElementById('bookingDate').addEventListener('change', loadAvailableSlots);
       document.getElementById('serviceSelect').addEventListener('change', loadAvailableSlots);
+      document.getElementById('durationSelect').addEventListener('change', loadAvailableSlots);
       document.querySelectorAll('#bookingFilter .booking-filter-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           bookingFilter = btn.dataset.filter || 'all';
@@ -350,6 +359,7 @@
         const service = document.getElementById('serviceSelect').value;
         const bookingDate = document.getElementById('bookingDate').value;
         const startTime = document.getElementById('timeSelect').value;
+        const duration = Number(document.getElementById('durationSelect').value) || 1;
         if (!location || !service || !bookingDate || !startTime) {
           showToast('請填寫完整預約資訊', 'error');
           return;
@@ -358,7 +368,7 @@
           const res = await fetch(`${API_URL}/api/liff/create-booking`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, bookingDate, startTime, location, service }),
+            body: JSON.stringify({ userId, bookingDate, startTime, location, service, duration }),
           });
           const data = await res.json();
           if (data.ok) {

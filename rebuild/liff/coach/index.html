@@ -8,7 +8,7 @@
   <title>高爾夫預約</title>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script>
-    window.APP_VERSION = '20260408-201552';
+    window.APP_VERSION = '20260409-165101';
     (function forceLatestVersion() {
       try {
         const url = new URL(window.location.href);
@@ -141,7 +141,15 @@
           <input id="studentSearch" class="student-search" type="text" placeholder="搜尋學員（姓名 / ID）">
           <label class="student-toggle"><input type="checkbox" id="onlyRemaining">只看有剩餘堂數</label>
         </div>
-        <button type="button" id="btnReloadStudents" class="btn-secondary">重新整理</button>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <select id="studentSort" style="padding:6px 10px; border-radius:999px; border:1px solid #ddd; font-size:13px; width:auto;">
+            <option value="remaining-desc">剩餘堂數多→少</option>
+            <option value="remaining-asc">剩餘堂數少→多</option>
+            <option value="name-asc">姓名 A→Z</option>
+            <option value="name-desc">姓名 Z→A</option>
+          </select>
+          <button type="button" id="btnReloadStudents" class="btn-secondary">重新整理</button>
+        </div>
       </div>
       <div id="studentList"></div>
     </div>
@@ -245,6 +253,12 @@
       <h2>預約課程</h2>
       <select id="locationSelect"><option value="">請選擇地點</option></select>
       <select id="serviceSelect"><option value="">請選擇課程</option></select>
+      <select id="durationSelect">
+        <option value="1">1 小時</option>
+        <option value="2">2 小時</option>
+        <option value="3">3 小時</option>
+        <option value="4">4 小時</option>
+      </select>
       <input type="date" id="bookingDate" placeholder="選擇日期" min="" max="">
       <select id="timeSelect"><option value="">選擇時段</option></select>
       <button id="btnBook">送出預約</button>
@@ -281,6 +295,7 @@
     let bookingFilter = 'all';
     let coachStudentDetails = [];
     let studentSearchKeyword = '';
+    let studentSortMode = 'remaining-desc';
     let onlyWithRemaining = false;
     let fixedSchedules = [];
     let bookingSectionCollapsed = {
@@ -369,8 +384,13 @@
         return;
       }
       listDiv.innerHTML = filtered.map((s) => {
-        const pkgHtml = s.packages.length
-          ? s.packages.map((p) => {
+        const sortedPkgs = [...s.packages].sort((a, b) => {
+          if (a.remainingCredits > 0 && b.remainingCredits <= 0) return -1;
+          if (a.remainingCredits <= 0 && b.remainingCredits > 0) return 1;
+          return (b.validFrom || b.createdAt || '').localeCompare(a.validFrom || a.createdAt || '');
+        });
+        const pkgHtml = sortedPkgs.length
+          ? sortedPkgs.map((p) => {
               const validText = p.validTo ? `到期：${p.validTo}` : '到期：無';
               return `<div class="pkg-line"><div class="pkg-title">${p.title || '未命名方案'}</div><div class="pkg-meta">剩餘 ${p.remainingCredits} / ${p.totalCredits} 堂 · ${validText}</div></div>`;
             }).join('')
@@ -385,8 +405,11 @@
               <div class="student-total">總剩餘：${s.totalRemaining} 堂</div>
             </div>
             ${pkgHtml}
-            <div style="margin-top:8px; text-align:right;">
-              <button type="button" class="btn-secondary" style="font-size:12px; padding:6px 12px; border-radius:6px; cursor:pointer;" onclick="openCoachHistoryPage('${s.lineUserId}', '${s.label}')">查看紀錄</button>
+            <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
+              <button type="button" style="font-size:12px; padding:6px 12px; border-radius:6px; cursor:pointer; background:#06c755; color:#fff; border:none;" onclick="quickDeduct('${s.lineUserId}', '${s.label}')">扣課</button>
+              <button type="button" style="font-size:12px; padding:6px 12px; border-radius:6px; cursor:pointer; background:#1976d2; color:#fff; border:none;" onclick="quickAdd('${s.lineUserId}', '${s.label}')">加課</button>
+              <button type="button" class="btn-secondary" style="font-size:12px; padding:6px 12px; border-radius:6px; cursor:pointer;" onclick="openCoachHistoryPage('${s.lineUserId}', '${s.label}')">紀錄</button>
+              <button type="button" class="btn-danger" style="font-size:12px; padding:6px 12px; border-radius:6px; cursor:pointer;" onclick="deleteStudent('${s.lineUserId}', '${s.label}')">刪除</button>
             </div>
           </div>
         `;
@@ -430,11 +453,8 @@
             return { ...s, packages: [], totalRemaining: 0, loadError: true };
           }
         }));
-        details.sort((a, b) => {
-          if (b.totalRemaining !== a.totalRemaining) return b.totalRemaining - a.totalRemaining;
-          return a.label.localeCompare(b.label);
-        });
         coachStudentDetails = details;
+        sortStudentDetails();
         renderStudentDetails();
       } catch (e) {
         listDiv.innerHTML = '<p class="muted">學員明細載入失敗，請稍後再試。</p>';
@@ -492,7 +512,9 @@
                return `<div class="schedule-item"><div style="display:flex; justify-content:space-between; align-items:flex-start;"><div><strong>${b.startTime}</strong>｜${b.studentName}</div>${cancelBtn}</div>📍 ${b.location} / ${b.service}<br>📌 ${statusText[b.status] || b.status}</div>`;
             })
             .join('');
-          return `<div class="schedule-date-title">${date}（${grouped[date].length} 筆）</div>${items}`;
+          const weekdays = ['日','一','二','三','四','五','六'];
+          const wd = weekdays[new Date(date + 'T00:00:00').getDay()];
+          return `<div class="schedule-date-title">${date}（星期${wd}）${grouped[date].length} 筆</div>${items}`;
         }).join('');
       } catch (e) {
         listDiv.innerHTML = '<p class="muted">查詢失敗，請確認網路連線。</p>';
@@ -608,7 +630,10 @@
                 const st = l.startTime || '00:00';
                 const et = l.endTime || '23:59';
                 const range = sd === ed ? `${sd} ${st} - ${et}` : `${sd} ${st} - ${ed} ${et}`;
-                return `<p>${range} ${l.note || ''}</p>`;
+                return `<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid #eee;">
+                  <span>${range} ${l.note || ''}</span>
+                  <button type="button" class="btn-danger btn-delete-leave" data-leave-id="${l.id}" style="font-size:11px; padding:3px 8px; border-radius:4px; cursor:pointer; white-space:nowrap;">取消</button>
+                </div>`;
               }).join('')
             : '<p>本月尚無休假</p>';
         });
@@ -728,6 +753,11 @@
         onlyWithRemaining = !!e.target.checked;
         renderStudentDetails();
       });
+      document.getElementById('studentSort').addEventListener('change', (e) => {
+        studentSortMode = e.target.value;
+        sortStudentDetails();
+        renderStudentDetails();
+      });
       document.getElementById('btnDeduct').addEventListener('click', async () => {
         const targetUserId = document.getElementById('deductStudentSelect').value;
         const amount = parseInt(document.getElementById('deductAmount').value, 10);
@@ -797,6 +827,31 @@
           const data = await res.json();
           if (data.ok) { showToast('已新增', 'success'); initLeaveDateTime(); loadLeaves(); } else showToast(data.error || '失敗', 'error');
         } catch (e) { showToast('請確認網路連線', 'error'); }
+      });
+      document.getElementById('leaveList').addEventListener('click', async (e) => {
+        const btn = e.target;
+        if (!(btn instanceof HTMLElement) || !btn.classList.contains('btn-delete-leave')) return;
+        const leaveId = btn.dataset.leaveId;
+        if (!leaveId) return;
+        if (!confirm('確定要取消這筆休假嗎？')) return;
+        btn.disabled = true;
+        btn.textContent = '取消中...';
+        try {
+          const res = await fetch(`${API_URL}/api/liff/coach-leave?userId=${encodeURIComponent(userId)}&id=${encodeURIComponent(leaveId)}`, { method: 'DELETE' });
+          const data = await res.json();
+          if (data.ok) {
+            showToast('休假已取消', 'success');
+            loadLeaves();
+          } else {
+            showToast(data.error || '取消失敗', 'error');
+            btn.disabled = false;
+            btn.textContent = '取消';
+          }
+        } catch (err) {
+          showToast('連線失敗', 'error');
+          btn.disabled = false;
+          btn.textContent = '取消';
+        }
       });
     }
 
@@ -956,7 +1011,8 @@
         return;
       }
       const service = document.getElementById('serviceSelect').value;
-      fetch(`${API_URL}/api/liff/available-slots?date=${encodeURIComponent(date)}&service=${encodeURIComponent(service || '')}`)
+      const dur = document.getElementById('durationSelect').value || '1';
+      fetch(`${API_URL}/api/liff/available-slots?date=${encodeURIComponent(date)}&service=${encodeURIComponent(service || '')}&duration=${dur}`)
         .then(r => r.json())
         .then(({ slots, slotStatus, error }) => {
           const sel = document.getElementById('timeSelect');
@@ -964,10 +1020,11 @@
             sel.innerHTML = '<option value="">時段載入失敗，請重試</option>';
             return;
           }
+          const d = parseInt(dur, 10) || 1;
           const formatSlotLabel = (time) => {
             const h = parseInt((time || '00:00').split(':')[0], 10);
-            const next = String(h + 1).padStart(2, '0') + ':00';
-            return `${time}-${next}`;
+            const end = String(h + d).padStart(2, '0') + ':00';
+            return `${time}-${end}`;
           };
           const statuses = Array.isArray(slotStatus) ? slotStatus : (slots || []).map(s => ({ time: s, available: true }));
           const options = statuses.map(s => {
@@ -975,7 +1032,7 @@
             if (s.available) return `<option value="${s.time}">${label}</option>`;
             if (s.reason === 'booked') return `<option value="${s.time}" disabled>${label}（教練於${s.location || '其他地點'}上課中）</option>`;
             if (s.reason === 'outside_hours') return `<option value="${s.time}" disabled>${label}（超出課程可預約時段）</option>`;
-            return `<option value="${s.time}" disabled>${label}（教練休假）</option>`;
+            return `<option value="${s.time}" disabled>${label}（${s.leaveNote || '教練休假'}）</option>`;
           });
           sel.innerHTML = '<option value="">選擇時段</option>' + options.join('');
         });
@@ -994,6 +1051,7 @@
       });
       document.getElementById('bookingDate').addEventListener('change', loadAvailableSlots);
       document.getElementById('serviceSelect').addEventListener('change', loadAvailableSlots);
+      document.getElementById('durationSelect').addEventListener('change', loadAvailableSlots);
       document.querySelectorAll('#bookingFilter .booking-filter-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           bookingFilter = btn.dataset.filter || 'all';
@@ -1063,9 +1121,10 @@
         const service = document.getElementById('serviceSelect').value;
         const bookingDate = document.getElementById('bookingDate').value;
         const startTime = document.getElementById('timeSelect').value;
+        const duration = Number(document.getElementById('durationSelect').value) || 1;
         if (!location || !service || !bookingDate || !startTime) { showToast('請填寫完整預約資訊', 'error'); return; }
         try {
-          const res = await fetch(`${API_URL}/api/liff/create-booking`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, bookingDate, startTime, location, service }) });
+          const res = await fetch(`${API_URL}/api/liff/create-booking`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId, bookingDate, startTime, location, service, duration }) });
           const data = await res.json();
           if (data.ok) {
             showToast('預約已送出，待教練確認\n即將自動關閉視窗，並於 LINE 顯示確認訊息。', 'success', 2600);
@@ -1130,6 +1189,76 @@
       document.getElementById('coachHistoryPageContent').innerHTML = '<p class="muted">載入中...</p>';
       loadStudentHistory(studentId, 'coachHistoryPageContent');
       window.scrollTo(0, 0);
+    }
+
+    function sortStudentDetails() {
+      coachStudentDetails.sort((a, b) => {
+        switch (studentSortMode) {
+          case 'remaining-asc': return a.totalRemaining - b.totalRemaining || a.label.localeCompare(b.label);
+          case 'name-asc': return a.label.localeCompare(b.label);
+          case 'name-desc': return b.label.localeCompare(a.label);
+          default: return b.totalRemaining - a.totalRemaining || a.label.localeCompare(b.label);
+        }
+      });
+    }
+
+    async function quickDeduct(studentId, studentName) {
+      const amount = prompt(`扣課 - ${studentName}\n請輸入扣課堂數：`);
+      if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) return;
+      const lessonNote = prompt('上課內容（選填）：') || '';
+      try {
+        const res = await fetch(`${API_URL}/api/liff/deduct-credits`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ coachUserId: userId, targetUserId: studentId, amount: Number(amount), note: null, lessonNote: lessonNote || null })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showToast(`${studentName} 扣課成功！剩餘 ${data.remaining} 堂`, 'success');
+          loadStudents();
+        } else {
+          showToast(data.error || '扣課失敗', 'error');
+        }
+      } catch (e) { showToast('連線失敗', 'error'); }
+    }
+
+    async function quickAdd(studentId, studentName) {
+      const credits = prompt(`加課 - ${studentName}\n請輸入堂數：`);
+      if (!credits || isNaN(Number(credits)) || Number(credits) <= 0) return;
+      const price = prompt('金額（NT$，選填）：') || '';
+      const note = prompt('方案名稱（選填）：') || '';
+      try {
+        const res = await fetch(`${API_URL}/api/liff/add-credits`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ coachUserId: userId, targetUserId: studentId, credits: Number(credits), title: note || '手動加課', validTo: null, validFrom: null, realName: null, price: price ? Number(price) : null })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showToast(`${studentName} 開課成功！`, 'success');
+          loadStudents();
+        } else {
+          showToast(data.error || '開課失敗', 'error');
+        }
+      } catch (e) { showToast('連線失敗', 'error'); }
+    }
+
+    async function deleteStudent(studentId, studentName) {
+      if (!confirm(`確定要刪除「${studentName}」嗎？\n將清除該學員的所有資料（課程包、預約、交易紀錄），此操作無法復原。`)) return;
+      try {
+        const res = await fetch(`${API_URL}/api/liff/delete-student`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ coachUserId: userId, targetUserId: studentId })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showToast(`已刪除 ${studentName}`, 'success');
+          loadStudents();
+        } else {
+          showToast(data.error || '刪除失敗', 'error');
+        }
+      } catch (e) {
+        showToast('連線失敗，請重試', 'error');
+      }
     }
 
     function closeCoachHistoryPage() {

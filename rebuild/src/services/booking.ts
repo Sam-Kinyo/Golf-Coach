@@ -41,6 +41,7 @@ export interface SlotStatus {
   available: boolean;
   reason?: 'booked' | 'leave' | 'outside_hours';
   location?: string;
+  leaveNote?: string;
 }
 
 export async function createBooking(
@@ -48,14 +49,16 @@ export async function createBooking(
   bookingDate: string,
   startTime: string,
   location: string,
-  service: string
+  service: string,
+  duration?: number
 ): Promise<string> {
   const db = getDb();
   const allSlots = getAvailableTimeSlots();
   if (!allSlots.includes(startTime)) {
     throw new Error('預約時段不在營業時間內');
   }
-  const duration = SERVICE_DURATION[service] ?? 1;
+  if (!duration || duration < 1) duration = SERVICE_DURATION[service] ?? 1;
+  if (duration > 4) duration = 4;
   const startH = parseInt(startTime.split(':')[0], 10);
   const endH = startH + duration;
   const endTime = `${String(endH).padStart(2, '0')}:00`;
@@ -215,21 +218,21 @@ export async function getAvailableSlots(date: string): Promise<string[]> {
   return statuses.filter((s) => s.available).map((s) => s.time);
 }
 
-export async function getSlotStatuses(date: string, service?: string): Promise<SlotStatus[]> {
+export async function getSlotStatuses(date: string, service?: string, durationOverride?: number): Promise<SlotStatus[]> {
   const all = getAvailableTimeSlots();
   const bookings = await getBookingsByDate(date);
   const fixedSessions = await getFixedSessionsOnDate(date);
   const blocked = await getBlockedSlots(date, all);
   const bookedInfo = new Map<string, { location: string }>();
-  const duration = SERVICE_DURATION[service ?? ''] ?? 1;
+  const duration = durationOverride && durationOverride >= 1 ? durationOverride : (SERVICE_DURATION[service ?? ''] ?? 1);
   const startHourMin = parseInt(all[0].split(':')[0], 10);
   const endHourLimit = parseInt(all[all.length - 1].split(':')[0], 10) + 1;
 
   for (const b of bookings) {
     if (b.status !== 'pending' && b.status !== 'approved') continue;
-    const duration = SERVICE_DURATION[b.service] ?? 1;
+    const d = SERVICE_DURATION[b.service] ?? 1;
     const startH = parseInt(b.startTime.split(':')[0], 10);
-    for (let i = 0; i < duration; i++) {
+    for (let i = 0; i < d; i++) {
       const slot = `${String(startH + i).padStart(2, '0')}:00`;
       bookedInfo.set(slot, { location: b.location });
     }
@@ -248,18 +251,17 @@ export async function getSlotStatuses(date: string, service?: string): Promise<S
     if (h < startHourMin || h + duration > endHourLimit) {
       return { time, available: false, reason: 'outside_hours' as const };
     }
-    const info = bookedInfo.get(time);
-    if (info) {
-      return {
-        time,
-        available: false,
-        reason: 'booked' as const,
-        location: info.location,
-      };
-    }
-    // 僅當沒有課程占用時，才顯示為休假。
-    if (blocked.has(time)) {
-      return { time, available: false, reason: 'leave' as const };
+    // 檢查連續 duration 小時是否都可用
+    for (let i = 0; i < duration; i++) {
+      const slot = `${String(h + i).padStart(2, '0')}:00`;
+      const info = bookedInfo.get(slot);
+      if (info) {
+        return { time, available: false, reason: 'booked' as const, location: info.location };
+      }
+      const leaveNote = blocked.get(slot);
+      if (leaveNote !== undefined) {
+        return { time, available: false, reason: 'leave' as const, leaveNote };
+      }
     }
     return { time, available: true };
   });

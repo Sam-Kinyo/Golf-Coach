@@ -79,11 +79,34 @@ export async function deleteFixedSchedule(id: string): Promise<void> {
   await getDb().collection(COLLECTION).doc(id).delete();
 }
 
+const EXCEPTIONS_COLLECTION = 'fixed_schedule_exceptions';
+
+export async function cancelFixedSession(date: string, startTime: string, endTime: string): Promise<string> {
+  const ref = await getDb().collection(EXCEPTIONS_COLLECTION).add({
+    date,
+    startTime,
+    endTime,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  return ref.id;
+}
+
+async function getExceptions(date: string): Promise<Set<string>> {
+  const snap = await getDb().collection(EXCEPTIONS_COLLECTION).where('date', '==', date).get();
+  const set = new Set<string>();
+  snap.docs.forEach((d) => {
+    const data = d.data();
+    set.add(`${data.startTime}-${data.endTime}`);
+  });
+  return set;
+}
+
 export async function getFixedSessionsOnDate(date: string): Promise<FixedSession[]> {
   const weekday = toWeekday(date);
   const templates = await listFixedSchedules();
   const allSlots = getAvailableTimeSlots();
   const blockedSet = await getBlockedSlots(date, allSlots);
+  const exceptions = await getExceptions(date);
 
   const sessions: FixedSession[] = [];
   for (const t of templates) {
@@ -91,6 +114,12 @@ export async function getFixedSessionsOnDate(date: string): Promise<FixedSession
 
     const startH = parseHour(t.startTime);
     const duration = SERVICE_DURATION[t.service] ?? 1;
+    const endH = startH + duration;
+    const endTimeStr = `${String(endH).padStart(2, '0')}:00`;
+
+    // 檢查是否被取消
+    if (exceptions.has(`${t.startTime}-${endTimeStr}`)) continue;
+
     let blocked = false;
     for (let i = 0; i < duration; i++) {
       const slot = `${String(startH + i).padStart(2, '0')}:00`;
@@ -100,8 +129,6 @@ export async function getFixedSessionsOnDate(date: string): Promise<FixedSession
       }
     }
     if (blocked) continue;
-
-    const endH = startH + duration;
     sessions.push({
       templateId: t.id,
       date,

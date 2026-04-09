@@ -44,9 +44,9 @@ async function getAllLeaves(): Promise<(CoachLeave & { id: string })[]> {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as CoachLeave & { id: string }));
 }
 
-export async function getBlockedSlots(date: string, allSlots: string[]): Promise<Set<string>> {
+export async function getBlockedSlots(date: string, allSlots: string[]): Promise<Map<string, string>> {
   const leaves = await getAllLeaves();
-  const blocked = new Set<string>();
+  const blocked = new Map<string, string>();
   const oneHourMs = 60 * 60 * 1000;
   for (const l of leaves) {
     const { start, end } = normalizeLeave(l);
@@ -54,8 +54,9 @@ export async function getBlockedSlots(date: string, allSlots: string[]): Promise
     for (const slot of allSlots) {
       const slotStart = new Date(`${date}T${slot}:00`);
       const slotEnd = new Date(slotStart.getTime() + oneHourMs);
-      // interval overlap: [slotStart, slotEnd) intersects [start, end)
-      if (slotStart < end && slotEnd > start) blocked.add(slot);
+      if (slotStart < end && slotEnd > start) {
+        blocked.set(slot, l.note || '教練休假');
+      }
     }
   }
   return blocked;

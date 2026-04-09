@@ -153,6 +153,7 @@ export async function notifyCoachesNewBooking(input: {
   startTime: string;
   location: string;
   service: string;
+  duration?: number;
 }): Promise<number> {
   const coachIds = env.coachLineUserIds;
   if (!coachIds.length) return 0;
@@ -160,11 +161,15 @@ export async function notifyCoachesNewBooking(input: {
   const user = await getUser(input.userId);
   const studentName = user?.alias ?? user?.displayName ?? input.userId;
   const mapsUrl = LOCATION_MAP[input.location] ?? '';
+  const dur = input.duration ?? 1;
+  const startH = parseInt(input.startTime.split(':')[0], 10);
+  const endTime = `${String(startH + dur).padStart(2, '0')}:00`;
+  const durationText = `${dur} 小時（${input.startTime}-${endTime}）`;
   const detailText =
     `🔔 新預約待處理\n\n` +
     `👤 學員：${studentName}\n` +
     `📅 日期：${input.bookingDate}\n` +
-    `⏰ 時段：${input.startTime}\n` +
+    `⏰ 時段：${durationText}\n` +
     `📍 地點：${input.location}\n` +
     `🏌️ 課程：${input.service}\n` +
     `🆔 編號：${input.bookingId}` +
@@ -216,7 +221,7 @@ export async function notifyCoachesNewBooking(input: {
     template: {
       type: 'buttons',
       title: '新預約待處理',
-      text: `${studentName}｜${input.bookingDate} ${input.startTime}`,
+      text: `${studentName}｜${input.bookingDate}\n${durationText}\n📍 ${input.location}`,
       actions: [
         {
           type: 'postback',
@@ -341,15 +346,18 @@ export async function notifyStudentBookingRejected(input: {
   startTime: string;
   location: string;
   service: string;
+  reason?: string;
 }): Promise<boolean> {
+  const reasonText = input.reason ? `\n📝 原因：${input.reason}` : '';
   const text =
     `⚠️ 此次預約未確認\n\n` +
     `📅 日期：${input.bookingDate}\n` +
     `⏰ 原時段：${input.startTime}\n` +
     `📍 地點：${input.location}\n` +
     `🏌️ 課程：${input.service}\n` +
-    `🆔 編號：${input.bookingId}\n\n` +
-    `請打開學員專區重新選擇可預約時段。`;
+    `🆔 編號：${input.bookingId}` +
+    reasonText +
+    `\n\n請打開學員專區重新選擇可預約時段。`;
   try {
     await pushMessage(input.userId, [{ type: 'text', text }]);
     return true;

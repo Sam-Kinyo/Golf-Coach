@@ -46,9 +46,9 @@ async function handlePostback(userId: string, event: WebhookEvent, replyToken: s
     const endTime = params.get('endTime');
     if (!date || !startTime || !endTime) return;
     try {
-      const { addLeave } = require('../services/coachLeave');
-      await addLeave(date, startTime, date, endTime, '取消固定排班');
-      await replyMessage(replyToken, `✅ 已幫您把 ${date} ${startTime}－${endTime} 的固定時段改為休假。`);
+      const { cancelFixedSession } = require('../services/fixedSchedule');
+      await cancelFixedSession(date, startTime, endTime);
+      await replyMessage(replyToken, `✅ 已取消 ${date} ${startTime}－${endTime} 的固定時段，該時段現在可接受預約。`);
     } catch (e) {
       await replyMessage(replyToken, '取消失敗，請確認時間格式。');
     }
@@ -375,7 +375,13 @@ async function replyCoachScheduleFlex(replyToken: string, label: string, dateStr
     });
   }
 
-  items.sort((a, b) => a.startTime.localeCompare(b.startTime));
+  // 已完成排最後，其餘按時間排序
+  const statusOrder = (s: string) => (s === 'completed' || s === 'cancelled' || s === 'rejected') ? 1 : 0;
+  items.sort((a, b) => {
+    const orderDiff = statusOrder(a.status) - statusOrder(b.status);
+    if (orderDiff !== 0) return orderDiff;
+    return a.startTime.localeCompare(b.startTime);
+  });
 
   if (items.length === 0) {
     await replyMessage(replyToken, `📋 ${label}（${dateStr}）沒有任何預約與固定課程。`);

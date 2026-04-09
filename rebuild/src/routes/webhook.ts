@@ -3,6 +3,7 @@ import { WebhookEvent } from '@line/bot-sdk';
 import { parseWebhook, isCoach } from '../services/line';
 import { getOrCreateUser } from '../services/user';
 import { handleWebhookEvent } from '../handlers/webhook';
+import { pushMessage } from '../services/line';
 
 interface LineWebhookPayload {
   events?: WebhookEvent[];
