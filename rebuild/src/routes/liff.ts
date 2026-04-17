@@ -1,11 +1,12 @@
 import { FastifyInstance } from 'fastify';
-import { getDb, admin } from '../config/firebase';
+import { getDb, admin, getBucket } from '../config/firebase';
+import crypto from 'crypto';
 import { getOrCreateUser, getUser, listStudentsWithAlias, setAlias } from '../services/user';
 import { getActivePackages, addCredits, deductCredits, getAllPackagesForRevenue } from '../services/package';
 import { addLeave, listLeaves } from '../services/coachLeave';
 import { getBooking, rejectBooking, createBooking, getBookingsByDateRange, getBookingsByUser, getSlotStatuses, cancelBooking } from '../services/booking';
 import { addFixedSchedule, deleteFixedSchedule, getFixedSessionsByDateRange, listFixedSchedules } from '../services/fixedSchedule';
-import { isCoach } from '../services/line';
+import { isCoach, pushMessage } from '../services/line';
 import { getAvailableTimeSlots, LOCATION_MAP, SERVICE_DURATION } from '../utils/constants';
 import { notifyCoachesNewBooking, notifyStudentBookingCreated, notifyStudentCreditAdded, notifyCoachCreditAdded, notifyStudentCreditDeducted, notifyCoachCreditDeducted, notifyStudentBookingRejected, notifyCoachesStudentCancelled } from '../services/notification';
 
@@ -533,6 +534,264 @@ export async function liffRoutes(app: FastifyInstance): Promise<void> {
     } catch (err: any) {
       return reply.status(500).send({ error: err.message ?? '取消失敗' });
     }
+  });
+
+  // ========== 影片管理 ==========
+
+  // 取得上傳用的 signed URL
+  app.post('/api/liff/video-upload-url', async (req, reply) => {
+    const { coachUserId, fileName, contentType } = req.body as any;
+    if (!coachUserId || !isCoach(coachUserId)) return reply.status(403).send({ error: 'Forbidden' });
+    if (!fileName || !contentType) return reply.status(400).send({ error: '缺少檔案資訊' });
+
+    const ext = fileName.split('.').pop() || 'mp4';
+    const storagePath = `videos/${Date.now()}_${crypto.randomUUID().slice(0, 8)}.${ext}`;
+    const bucket = getBucket();
+    const file = bucket.file(storagePath);
+
+    const [uploadUrl] = await file.getSignedUrl({
+      version: 'v4',
+      action: 'write',
+      expires: Date.now() + 15 * 60 * 1000,
+      contentType,
+    });
+
+    return { uploadUrl, storagePath };
+  });
+
+  // 新增影片（支援 Storage 上傳 & YouTube 連結）
+  app.post('/api/liff/video', async (req, reply) => {
+    const { coachUserId, title, youtubeUrl, storagePath, description, studentIds } = req.body as any;
+    if (!coachUserId || !isCoach(coachUserId)) return reply.status(403).send({ error: 'Forbidden' });
+    if (!title || (!youtubeUrl && !storagePath)) return reply.status(400).send({ error: '請填寫標題和影片' });
+
+    let videoUrl = '';
+    if (storagePath) {
+      const bucket = getBucket();
+      const file = bucket.file(storagePath);
+      const [signedUrl] = await file.getSignedUrl({
+        action: 'read',
+        expires: '2030-12-31',
+      });
+      videoUrl = signedUrl;
+    }
+
+    const ref = await getDb().collection('videos').add({
+      title,
+      youtubeUrl: youtubeUrl || '',
+      videoUrl,
+      storagePath: storagePath || '',
+      description: description || '',
+      studentIds: Array.isArray(studentIds) ? studentIds : [],
+      createdBy: coachUserId,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // 推播通知被指定的學員
+    const ids = Array.isArray(studentIds) ? studentIds : [];
+    for (const sid of ids) {
+      try {
+        const user = await getUser(sid);
+        const name = user?.alias ?? user?.displayName ?? '學員';
+        await pushMessage(sid, [{ type: 'text', text: `🎬 ${name} 您好！\n\n教練為您準備了專屬教學影片：「${title}」\n\n請打開學員專區的「我的影片」觀看。` }]);
+      } catch (err) {
+        console.error('[video/notify]', sid, err);
+      }
+    }
+
+    return { ok: true, videoId: ref.id };
+  });
+
+  app.get('/api/liff/videos', async (req, reply) => {
+    const userId = (req.query as any).userId;
+    if (!userId || !isCoach(userId)) return reply.status(403).send({ error: 'Forbidden' });
+    const snap = await getDb().collection('videos').orderBy('createdAt', 'desc').get();
+    const videos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    return { videos };
+  });
+
+  app.delete('/api/liff/video', async (req, reply) => {
+    const userId = (req.query as any).userId;
+    const videoId = (req.query as any).id;
+    if (!userId || !isCoach(userId)) return reply.status(403).send({ error: 'Forbidden' });
+    if (!videoId) return reply.status(400).send({ error: '缺少影片 ID' });
+
+    // 刪除 Storage 檔案
+    const doc = await getDb().collection('videos').doc(videoId).get();
+    const data = doc.data();
+    if (data?.storagePath) {
+      try {
+        await getBucket().file(data.storagePath).delete();
+      } catch (err) {
+        console.error('[video/delete-storage]', err);
+      }
+    }
+
+    await getDb().collection('videos').doc(videoId).delete();
+    return { ok: true };
+  });
+
+  app.get('/api/liff/my-videos', async (req, reply) => {
+    const userId = (req.query as any).userId;
+    if (!userId) return reply.status(400).send({ error: 'Missing userId' });
+    const snap = await getDb().collection('videos').where('studentIds', 'array-contains', userId).orderBy('createdAt', 'desc').get();
+    const videos = snap.docs.map(d => {
+      const data = d.data();
+      return { id: d.id, title: data.title, youtubeUrl: data.youtubeUrl, videoUrl: data.videoUrl || '', description: data.description, createdAt: data.createdAt };
+    });
+    return { videos };
+  });
+
+  // ========== 照片管理 ==========
+
+  app.post('/api/liff/photo-upload-url', async (req, reply) => {
+    const { coachUserId, fileName, contentType } = req.body as any;
+    if (!coachUserId || !isCoach(coachUserId)) return reply.status(403).send({ error: 'Forbidden' });
+    if (!fileName || !contentType) return reply.status(400).send({ error: '缺少檔案資訊' });
+    const ext = fileName.split('.').pop() || 'jpg';
+    const storagePath = `photos/${Date.now()}_${crypto.randomUUID().slice(0, 8)}.${ext}`;
+    const bucket = getBucket();
+    const file = bucket.file(storagePath);
+    const [uploadUrl] = await file.getSignedUrl({ version: 'v4', action: 'write', expires: Date.now() + 15 * 60 * 1000, contentType });
+    return { uploadUrl, storagePath };
+  });
+
+  app.post('/api/liff/photo', async (req, reply) => {
+    const { coachUserId, title, storagePath, description, studentIds } = req.body as any;
+    if (!coachUserId || !isCoach(coachUserId)) return reply.status(403).send({ error: 'Forbidden' });
+    if (!title || !storagePath) return reply.status(400).send({ error: '請填寫標題和照片' });
+    const bucket = getBucket();
+    const file = bucket.file(storagePath);
+    const [photoUrl] = await file.getSignedUrl({ action: 'read', expires: '2030-12-31' });
+    const ref = await getDb().collection('photos').add({
+      title, photoUrl, storagePath, description: description || '',
+      studentIds: Array.isArray(studentIds) ? studentIds : [],
+      createdBy: coachUserId, createdAt: new Date(),
+    });
+    for (const sid of (Array.isArray(studentIds) ? studentIds : [])) {
+      try {
+        const user = (await getDb().collection('users').where('lineUserId', '==', sid).limit(1).get()).docs[0]?.data();
+        const name = user?.alias ?? user?.displayName ?? '學員';
+        await pushMessage(sid, [{ type: 'text', text: `📸 ${name} 您好！\n\n教練為您上傳了專屬照片：「${title}」\n\n請打開學員專區的「我的照片」觀看。` }]);
+      } catch (err) { console.error('[photo/notify]', sid, err); }
+    }
+    return { ok: true, photoId: ref.id };
+  });
+
+  app.get('/api/liff/photos', async (req, reply) => {
+    const userId = (req.query as any).userId;
+    if (!userId || !isCoach(userId)) return reply.status(403).send({ error: 'Forbidden' });
+    const snap = await getDb().collection('photos').orderBy('createdAt', 'desc').get();
+    const photos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    return { photos };
+  });
+
+  app.delete('/api/liff/photo', async (req, reply) => {
+    const userId = (req.query as any).userId;
+    const photoId = (req.query as any).id;
+    if (!userId || !isCoach(userId)) return reply.status(403).send({ error: 'Forbidden' });
+    if (!photoId) return reply.status(400).send({ error: '缺少照片 ID' });
+    const doc = await getDb().collection('photos').doc(photoId).get();
+    const data = doc.data();
+    if (data?.storagePath) {
+      try { await getBucket().file(data.storagePath).delete(); } catch (err) { console.error('[photo/delete-storage]', err); }
+    }
+    await getDb().collection('photos').doc(photoId).delete();
+    return { ok: true };
+  });
+
+  app.get('/api/liff/my-photos', async (req, reply) => {
+    const userId = (req.query as any).userId;
+    if (!userId) return reply.status(400).send({ error: 'Missing userId' });
+    const snap = await getDb().collection('photos').where('studentIds', 'array-contains', userId).orderBy('createdAt', 'desc').get();
+    const photos = snap.docs.map(d => {
+      const data = d.data();
+      return { id: d.id, title: data.title, photoUrl: data.photoUrl || '', description: data.description, createdAt: data.createdAt };
+    });
+    return { photos };
+  });
+
+  // ========== 學員請假 ==========
+
+  // 教練新增學員請假紀錄
+  app.post('/api/liff/student-leave', async (req, reply) => {
+    const { coachUserId, studentId, startDate, startTime, endDate, endTime, note, bookingId } = req.body as any;
+    if (!coachUserId || !isCoach(coachUserId)) return reply.status(403).send({ error: 'Forbidden' });
+    if (!studentId || !startDate || !endDate) return reply.status(400).send({ error: '請填寫學員和日期' });
+
+    const db = getDb();
+
+    // 若有 bookingId，自動取消該預約
+    let linkedBookingInfo: any = null;
+    if (bookingId) {
+      const booking = await getBooking(bookingId);
+      if (booking) {
+        await cancelBooking(bookingId, note || '學員請假');
+        linkedBookingInfo = booking;
+      }
+    }
+
+    const ref = await db.collection('student_leaves').add({
+      studentId,
+      startDate,
+      startTime: startTime || null,
+      endDate,
+      endTime: endTime || null,
+      note: note || '',
+      bookingId: bookingId || null,
+      createdBy: coachUserId,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // 推播通知學員
+    try {
+      const user = await getUser(studentId);
+      const name = user?.alias ?? user?.displayName ?? '學員';
+      const dateRange = startDate === endDate
+        ? `${startDate}${startTime ? ` ${startTime}` : ''}${endTime ? ` - ${endTime}` : ''}`
+        : `${startDate}${startTime ? ` ${startTime}` : ''} ～ ${endDate}${endTime ? ` ${endTime}` : ''}`;
+      let text = `📝 ${name} 您好！\n\n教練已為您記錄請假：\n📅 ${dateRange}`;
+      if (note) text += `\n📌 原因：${note}`;
+      if (linkedBookingInfo) {
+        text += `\n\n⚠️ 原預約已自動取消：\n${linkedBookingInfo.bookingDate} ${linkedBookingInfo.startTime} ${linkedBookingInfo.service}`;
+      }
+      text += `\n\n請至學員專區「我的請假」查看。`;
+      await pushMessage(studentId, [{ type: 'text', text }]);
+    } catch (err) {
+      console.error('[student-leave/notify]', err);
+    }
+
+    return { ok: true, leaveId: ref.id };
+  });
+
+  // 教練查詢所有學員請假
+  app.get('/api/liff/student-leaves', async (req, reply) => {
+    const userId = (req.query as any).userId;
+    if (!userId || !isCoach(userId)) return reply.status(403).send({ error: 'Forbidden' });
+    const snap = await getDb().collection('student_leaves').orderBy('createdAt', 'desc').get();
+    const leaves = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    return { leaves };
+  });
+
+  // 教練刪除學員請假
+  app.delete('/api/liff/student-leave', async (req, reply) => {
+    const userId = (req.query as any).userId;
+    const leaveId = (req.query as any).id;
+    if (!userId || !isCoach(userId)) return reply.status(403).send({ error: 'Forbidden' });
+    if (!leaveId) return reply.status(400).send({ error: '缺少請假 ID' });
+    await getDb().collection('student_leaves').doc(leaveId).delete();
+    return { ok: true };
+  });
+
+  // 學員查詢自己的請假紀錄
+  app.get('/api/liff/my-leaves', async (req, reply) => {
+    const userId = (req.query as any).userId;
+    if (!userId) return reply.status(400).send({ error: 'Missing userId' });
+    const snap = await getDb().collection('student_leaves').where('studentId', '==', userId).get();
+    const leaves = snap.docs
+      .map(d => ({ id: d.id, ...d.data() } as any))
+      .sort((a, b) => (b.createdAt?._seconds ?? 0) - (a.createdAt?._seconds ?? 0));
+    return { leaves };
   });
 
   // ========== 教練刪除學員 ==========

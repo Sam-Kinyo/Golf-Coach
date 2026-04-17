@@ -8,7 +8,7 @@
   <title>學員專區</title>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script>
-    window.APP_VERSION = '20260409-165101';
+    window.APP_VERSION = '20260417-170714';
     (function forceLatestVersion() {
       try {
         const url = new URL(window.location.href);
@@ -84,6 +84,9 @@
     <div class="tabs">
       <span class="tab active" data-tab="credits">我的堂數</span>
       <span class="tab" data-tab="bookings">我的預約</span>
+      <span class="tab" data-tab="myleaves">我的請假</span>
+      <span class="tab" data-tab="myvideos">我的影片</span>
+      <span class="tab" data-tab="myphotos">我的照片</span>
       <span class="tab" data-tab="new">預約課程</span>
     </div>
 
@@ -102,6 +105,21 @@
         <button type="button" class="booking-filter-btn" data-filter="rejected">已拒絕</button>
       </div>
       <div id="bookingList"></div>
+    </div>
+
+    <div id="myleaves" class="card hidden">
+      <h2>我的請假</h2>
+      <div id="myLeaveList"></div>
+    </div>
+
+    <div id="myvideos" class="card hidden">
+      <h2>我的影片</h2>
+      <div id="myVideoList"></div>
+    </div>
+
+    <div id="myphotos" class="card hidden">
+      <h2>我的照片</h2>
+      <div id="myPhotoList"></div>
     </div>
 
     <div id="new" class="card hidden">
@@ -277,6 +295,89 @@
       renderBookings();
     }
 
+    function extractYoutubeId(url) {
+      const m = (url || '').match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{11})/);
+      return m ? m[1] : null;
+    }
+
+    async function loadMyVideos() {
+      const listDiv = document.getElementById('myVideoList');
+      listDiv.innerHTML = '<p class="muted">載入中...</p>';
+      try {
+        const res = await fetch(`${API_URL}/api/liff/my-videos?userId=${encodeURIComponent(userId)}`);
+        const { videos } = await res.json();
+        if (!videos || !videos.length) {
+          listDiv.innerHTML = '<p class="muted">目前沒有教練分享的影片。</p>';
+          return;
+        }
+        listDiv.innerHTML = videos.map(v => {
+          let embed = '';
+          if (v.videoUrl) {
+            embed = `<video src="${v.videoUrl}" style="width:100%;border-radius:8px;margin:8px 0;max-height:300px;" controls preload="metadata"></video>`;
+          } else {
+            const ytId = extractYoutubeId(v.youtubeUrl);
+            embed = ytId ? `<div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;border-radius:8px;margin:8px 0;"><iframe src="https://www.youtube.com/embed/${ytId}" style="position:absolute;top:0;left:0;width:100%;height:100%;border:none;" allowfullscreen></iframe></div>` : `<a href="${v.youtubeUrl}" target="_blank" style="color:#1976d2;">開啟影片</a>`;
+          }
+          return `<div style="background:#fff;border-radius:12px;padding:16px;margin-bottom:12px;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+            <strong>${v.title || '未命名'}</strong>
+            ${v.description ? `<div style="color:#666;font-size:13px;margin:4px 0;">${v.description}</div>` : ''}
+            ${embed}
+          </div>`;
+        }).join('');
+      } catch (e) {
+        listDiv.innerHTML = '<p class="muted">影片載入失敗</p>';
+      }
+    }
+
+    async function loadMyPhotos() {
+      const listDiv = document.getElementById('myPhotoList');
+      listDiv.innerHTML = '<p class="muted">載入中...</p>';
+      try {
+        const res = await fetch(`${API_URL}/api/liff/my-photos?userId=${encodeURIComponent(userId)}`);
+        const { photos } = await res.json();
+        if (!photos || !photos.length) {
+          listDiv.innerHTML = '<p class="muted">目前沒有教練分享的照片。</p>';
+          return;
+        }
+        listDiv.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">` +
+          photos.map(p => `
+            <div style="border-radius:8px;overflow:hidden;border:1px solid #eee;">
+              <img src="${p.photoUrl}" style="width:100%;height:130px;object-fit:cover;display:block;" onclick="this.requestFullscreen && this.requestFullscreen()">
+              <div style="padding:6px 8px;">
+                <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.title || '未命名'}</div>
+                ${p.description ? `<div style="font-size:11px;color:#888;">${p.description}</div>` : ''}
+              </div>
+            </div>`).join('') + `</div>`;
+      } catch (e) {
+        listDiv.innerHTML = '<p class="muted">照片載入失敗</p>';
+      }
+    }
+
+    async function loadMyLeaves() {
+      const listDiv = document.getElementById('myLeaveList');
+      listDiv.innerHTML = '<p class="muted">載入中...</p>';
+      try {
+        const res = await fetch(`${API_URL}/api/liff/my-leaves?userId=${encodeURIComponent(userId)}`);
+        const { leaves } = await res.json();
+        if (!leaves || !leaves.length) {
+          listDiv.innerHTML = '<p class="muted">目前沒有請假紀錄。</p>';
+          return;
+        }
+        listDiv.innerHTML = leaves.map(l => {
+          const dateRange = l.startDate === l.endDate
+            ? `${l.startDate}${l.startTime ? ` ${l.startTime}` : ''}${l.endTime ? ` - ${l.endTime}` : ''}`
+            : `${l.startDate}${l.startTime ? ` ${l.startTime}` : ''} ～ ${l.endDate}${l.endTime ? ` ${l.endTime}` : ''}`;
+          return `<div style="background:#fff;border-radius:12px;padding:16px;margin-bottom:12px;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+            <div style="font-weight:700;margin-bottom:4px;">📅 ${dateRange}</div>
+            ${l.note ? `<div style="color:#555;font-size:14px;margin:4px 0;">📌 ${l.note}</div>` : ''}
+            ${l.bookingId ? `<div style="color:#e67e22;font-size:12px;margin-top:4px;">⚠️ 原預約已取消</div>` : ''}
+          </div>`;
+        }).join('');
+      } catch (e) {
+        listDiv.innerHTML = '<p class="muted">請假紀錄載入失敗</p>';
+      }
+    }
+
     async function loadAvailableSlots() {
       const date = document.getElementById('bookingDate').value;
       if (!date) {
@@ -315,10 +416,13 @@
       document.querySelectorAll('.tab').forEach(t => {
         t.addEventListener('click', () => {
           document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
-          document.querySelectorAll('#credits, #bookings, #new').forEach(x => x.classList.add('hidden'));
+          document.querySelectorAll('#credits, #bookings, #myleaves, #myvideos, #myphotos, #new').forEach(x => x.classList.add('hidden'));
           t.classList.add('active');
           document.getElementById(t.dataset.tab).classList.remove('hidden');
           if (t.dataset.tab === 'new') loadAvailableSlots();
+          if (t.dataset.tab === 'myvideos') loadMyVideos();
+          if (t.dataset.tab === 'myphotos') loadMyPhotos();
+          if (t.dataset.tab === 'myleaves') loadMyLeaves();
         });
       });
 

@@ -8,7 +8,7 @@
   <title>高爾夫預約</title>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script>
-    window.APP_VERSION = '20260417-170032';
+    window.APP_VERSION = '20260417-170714';
     (function forceLatestVersion() {
       try {
         const url = new URL(window.location.href);
@@ -251,6 +251,36 @@
       </div>
 
       <div id="videoList" style="margin-top:12px;"></div>
+
+      <!-- 照片區 -->
+      <div id="photoSection" style="display:none;margin-top:20px;border-top:2px solid #eee;padding-top:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <strong style="font-size:15px;">📸 照片</strong>
+          <button type="button" id="btnShowPhotoForm" style="background:#1976d2;padding:6px 14px;font-size:13px;border-radius:8px;color:#fff;border:none;cursor:pointer;">＋ 新增照片</button>
+        </div>
+        <div id="photoForm" style="display:none;padding:12px;border:1px solid #eee;border-radius:8px;margin-bottom:12px;">
+          <input type="text" id="photoTitle" placeholder="照片標題">
+          <label id="photoFileLabel" style="display:block;padding:12px;border:2px dashed #ccc;border-radius:8px;text-align:center;color:#888;cursor:pointer;margin-bottom:8px;font-size:14px;">
+            點擊選擇照片
+            <input type="file" id="photoFile" accept="image/*" style="display:none;">
+          </label>
+          <div id="photoPreview" style="display:none;margin-bottom:8px;">
+            <img id="photoPreviewImg" style="width:100%;border-radius:8px;max-height:200px;object-fit:cover;">
+            <button type="button" id="btnClearPhoto" style="font-size:12px;padding:4px 10px;margin-top:4px;background:#e74c3c;color:#fff;border:none;border-radius:4px;cursor:pointer;">移除照片</button>
+          </div>
+          <input type="text" id="photoDesc" placeholder="備註說明（選填）">
+          <label style="display:flex;align-items:center;gap:8px;margin:8px 0;font-size:14px;cursor:pointer;">
+            <input type="checkbox" id="photoShareMultiple" style="width:auto;">
+            同時分享給其他學員
+          </label>
+          <div id="photoExtraStudents" style="display:none;max-height:160px;overflow-y:auto;border:1px solid #ddd;border-radius:8px;padding:8px;margin-bottom:8px;font-size:14px;"></div>
+          <div style="display:flex;gap:8px;">
+            <button id="btnAddPhoto" style="flex:1;">上傳照片</button>
+            <button type="button" id="btnCancelPhotoForm" style="flex:1;background:#aaa;">取消</button>
+          </div>
+        </div>
+        <div id="photoList"></div>
+      </div>
     </div>
     <div id="studentleave" class="card hidden">
       <h2>學員請假</h2>
@@ -768,6 +798,72 @@
       document.getElementById('videoShareMultiple').addEventListener('change', (e) => {
         document.getElementById('videoExtraStudents').style.display = e.target.checked ? 'block' : 'none';
       });
+      // 照片管理
+      document.getElementById('btnShowPhotoForm').addEventListener('click', () => {
+        document.getElementById('photoForm').style.display = 'block';
+        document.getElementById('btnShowPhotoForm').style.display = 'none';
+      });
+      document.getElementById('btnCancelPhotoForm').addEventListener('click', () => {
+        document.getElementById('photoForm').style.display = 'none';
+        document.getElementById('btnShowPhotoForm').style.display = 'block';
+      });
+      document.getElementById('photoShareMultiple').addEventListener('change', (e) => {
+        document.getElementById('photoExtraStudents').style.display = e.target.checked ? 'block' : 'none';
+      });
+      document.getElementById('photoFile').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          document.getElementById('photoFileLabel').style.display = 'none';
+          document.getElementById('photoPreview').style.display = 'block';
+          document.getElementById('photoPreviewImg').src = URL.createObjectURL(file);
+        }
+      });
+      document.getElementById('btnClearPhoto').addEventListener('click', () => {
+        document.getElementById('photoFile').value = '';
+        document.getElementById('photoPreview').style.display = 'none';
+        document.getElementById('photoFileLabel').style.display = 'block';
+        document.getElementById('photoPreviewImg').src = '';
+      });
+      document.getElementById('btnAddPhoto').addEventListener('click', async () => {
+        const title = document.getElementById('photoTitle').value.trim();
+        const file = document.getElementById('photoFile').files[0];
+        const description = document.getElementById('photoDesc').value.trim();
+        const primaryStudent = document.getElementById('videoStudentFilter').value;
+        const extraIds = [...document.querySelectorAll('.photo-extra-cb:checked')].map(cb => cb.value);
+        const studentIds = primaryStudent ? [primaryStudent, ...extraIds] : extraIds;
+        if (!title || !file) { showToast('請填寫標題並選擇照片', 'error'); return; }
+        const btn = document.getElementById('btnAddPhoto');
+        btn.disabled = true; btn.textContent = '上傳中...';
+        try {
+          const urlRes = await fetch(`${API_URL}/api/liff/photo-upload-url`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ coachUserId: userId, fileName: file.name, contentType: file.type || 'image/jpeg' })
+          });
+          const { uploadUrl, storagePath } = await urlRes.json();
+          if (!uploadUrl) throw new Error('無法取得上傳網址');
+          await fetch(uploadUrl, { method: 'PUT', headers: { 'Content-Type': file.type || 'image/jpeg' }, body: file });
+          const res = await fetch(`${API_URL}/api/liff/photo`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ coachUserId: userId, title, storagePath, description, studentIds })
+          });
+          const data = await res.json();
+          if (data.ok) {
+            showToast('照片已新增' + (studentIds.length ? `，已通知 ${studentIds.length} 位學員` : ''), 'success');
+            document.getElementById('photoTitle').value = '';
+            document.getElementById('photoFile').value = '';
+            document.getElementById('photoPreview').style.display = 'none';
+            document.getElementById('photoFileLabel').style.display = 'block';
+            document.getElementById('photoPreviewImg').src = '';
+            document.getElementById('photoDesc').value = '';
+            document.getElementById('photoShareMultiple').checked = false;
+            document.getElementById('photoExtraStudents').style.display = 'none';
+            document.getElementById('photoForm').style.display = 'none';
+            document.getElementById('btnShowPhotoForm').style.display = 'block';
+            loadPhotos();
+          } else { showToast(data.error || '新增失敗', 'error'); }
+        } catch (e) { showToast(e.message || '上傳失敗', 'error'); }
+        btn.disabled = false; btn.textContent = '上傳照片';
+      });
       document.getElementById('videoFile').addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (file) {
@@ -1155,6 +1251,7 @@
         }).join('');
 
       addSection.style.display = 'block';
+      loadPhotos();
       listDiv.innerHTML = '<p class="muted">載入中...</p>';
 
       try {
@@ -1197,6 +1294,53 @@
         const res = await fetch(`${API_URL}/api/liff/video?userId=${encodeURIComponent(userId)}&id=${encodeURIComponent(videoId)}`, { method: 'DELETE' });
         const data = await res.json();
         if (data.ok) { showToast('影片已刪除', 'success'); loadVideos(); }
+        else showToast(data.error || '刪除失敗', 'error');
+      } catch (e) { showToast('連線失敗', 'error'); }
+    }
+
+    async function loadPhotos() {
+      const filterSel = document.getElementById('videoStudentFilter');
+      const selectedId = filterSel.value;
+      const photoSection = document.getElementById('photoSection');
+      const listDiv = document.getElementById('photoList');
+      const extraDiv = document.getElementById('photoExtraStudents');
+      if (!selectedId) { photoSection.style.display = 'none'; return; }
+      photoSection.style.display = 'block';
+      // 更新「其他學員」checkbox
+      const allStudents = filterSel._students || [];
+      extraDiv.innerHTML = allStudents
+        .filter(s => s.lineUserId !== selectedId)
+        .map(s => {
+          const label = s.alias || s.displayName || s.lineUserId;
+          return `<label style="display:block;padding:4px 0;"><input type="checkbox" class="photo-extra-cb" value="${s.lineUserId}" style="width:auto;margin-right:6px;">${label}</label>`;
+        }).join('');
+      listDiv.innerHTML = '<p class="muted">載入中...</p>';
+      try {
+        const res = await fetch(`${API_URL}/api/liff/photos?userId=${encodeURIComponent(userId)}`);
+        const { photos } = await res.json();
+        const filtered = (photos || []).filter(p =>
+          !p.studentIds || !p.studentIds.length || p.studentIds.includes(selectedId)
+        );
+        if (!filtered.length) { listDiv.innerHTML = '<p class="muted">此學員尚無照片。</p>'; return; }
+        listDiv.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">` +
+          filtered.map(p => `
+            <div style="border-radius:8px;overflow:hidden;border:1px solid #eee;position:relative;">
+              <img src="${p.photoUrl}" style="width:100%;height:120px;object-fit:cover;display:block;">
+              <div style="padding:6px 8px;">
+                <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.title || '未命名'}</div>
+                ${p.description ? `<div style="font-size:11px;color:#888;">${p.description}</div>` : ''}
+              </div>
+              <button type="button" onclick="deletePhoto('${p.id}')" style="position:absolute;top:4px;right:4px;font-size:11px;padding:2px 7px;border-radius:4px;background:rgba(231,76,60,0.85);color:#fff;border:none;cursor:pointer;">刪除</button>
+            </div>`).join('') + `</div>`;
+      } catch (e) { listDiv.innerHTML = '<p class="muted">照片載入失敗</p>'; }
+    }
+
+    async function deletePhoto(photoId) {
+      if (!confirm('確定要刪除此照片嗎？')) return;
+      try {
+        const res = await fetch(`${API_URL}/api/liff/photo?userId=${encodeURIComponent(userId)}&id=${encodeURIComponent(photoId)}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.ok) { showToast('照片已刪除', 'success'); loadPhotos(); }
         else showToast(data.error || '刪除失敗', 'error');
       } catch (e) { showToast('連線失敗', 'error'); }
     }
