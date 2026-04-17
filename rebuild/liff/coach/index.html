@@ -8,7 +8,7 @@
   <title>高爾夫預約</title>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script>
-    window.APP_VERSION = '20260417-165656';
+    window.APP_VERSION = '20260417-170032';
     (function forceLatestVersion() {
       try {
         const url = new URL(window.location.href);
@@ -217,29 +217,40 @@
     </div>
     <div id="videos" class="card hidden">
       <h2>影片管理</h2>
-      <div class="field-hint">新增影片</div>
-      <input type="text" id="videoTitle" placeholder="影片標題">
-      <div class="field-hint">選擇影片檔案</div>
-      <label id="videoFileLabel" style="display:block;padding:12px;border:2px dashed #ccc;border-radius:8px;text-align:center;color:#888;cursor:pointer;margin-bottom:8px;font-size:14px;">
-        點擊選擇影片
-        <input type="file" id="videoFile" accept="video/*" style="display:none;">
-      </label>
-      <div id="videoPreview" style="display:none;margin-bottom:8px;">
-        <video id="videoPreviewPlayer" style="width:100%;border-radius:8px;max-height:200px;" controls></video>
-        <button type="button" id="btnClearVideo" style="font-size:12px;padding:4px 10px;margin-top:4px;background:#e74c3c;color:#fff;border:none;border-radius:4px;cursor:pointer;">移除影片</button>
-      </div>
-      <div id="videoUploadProgress" style="display:none;margin-bottom:8px;">
-        <div style="background:#eee;border-radius:4px;height:8px;overflow:hidden;">
-          <div id="videoProgressBar" style="height:100%;background:#4CAF50;width:0%;transition:width 0.3s;"></div>
+      <select id="videoStudentFilter"><option value="">請選擇學員</option></select>
+
+      <div id="videoAddSection" style="display:none;margin-top:8px;">
+        <button type="button" id="btnShowVideoForm" style="background:#1976d2;">＋ 新增影片</button>
+        <div id="videoForm" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid #eee;">
+          <input type="text" id="videoTitle" placeholder="影片標題">
+          <label id="videoFileLabel" style="display:block;padding:12px;border:2px dashed #ccc;border-radius:8px;text-align:center;color:#888;cursor:pointer;margin-bottom:8px;font-size:14px;">
+            點擊選擇影片
+            <input type="file" id="videoFile" accept="video/*" style="display:none;">
+          </label>
+          <div id="videoPreview" style="display:none;margin-bottom:8px;">
+            <video id="videoPreviewPlayer" style="width:100%;border-radius:8px;max-height:200px;" controls></video>
+            <button type="button" id="btnClearVideo" style="font-size:12px;padding:4px 10px;margin-top:4px;background:#e74c3c;color:#fff;border:none;border-radius:4px;cursor:pointer;">移除影片</button>
+          </div>
+          <div id="videoUploadProgress" style="display:none;margin-bottom:8px;">
+            <div style="background:#eee;border-radius:4px;height:8px;overflow:hidden;">
+              <div id="videoProgressBar" style="height:100%;background:#4CAF50;width:0%;transition:width 0.3s;"></div>
+            </div>
+            <div id="videoProgressText" style="font-size:12px;color:#666;margin-top:4px;text-align:center;">上傳中...</div>
+          </div>
+          <input type="text" id="videoDesc" placeholder="備註說明（選填）">
+          <label style="display:flex;align-items:center;gap:8px;margin:8px 0;font-size:14px;cursor:pointer;">
+            <input type="checkbox" id="videoShareMultiple" style="width:auto;">
+            同時分享給其他學員
+          </label>
+          <div id="videoExtraStudents" style="display:none;max-height:160px;overflow-y:auto;border:1px solid #ddd;border-radius:8px;padding:8px;margin-bottom:8px;font-size:14px;"></div>
+          <div style="display:flex;gap:8px;">
+            <button id="btnAddVideo" style="flex:1;">上傳</button>
+            <button type="button" id="btnCancelVideoForm" style="flex:1;background:#aaa;">取消</button>
+          </div>
         </div>
-        <div id="videoProgressText" style="font-size:12px;color:#666;margin-top:4px;text-align:center;">上傳中...</div>
       </div>
-      <input type="text" id="videoDesc" placeholder="備註說明（選填）">
-      <div class="field-hint">指定學員（可多選）</div>
-      <div id="videoStudentCheckboxes" style="max-height:200px; overflow-y:auto; border:1px solid #ddd; border-radius:8px; padding:8px; margin:8px 0;"></div>
-      <button id="btnAddVideo">新增影片</button>
-      <div class="field-hint" style="margin-top:16px;">影片列表</div>
-      <div id="videoList"></div>
+
+      <div id="videoList" style="margin-top:12px;"></div>
     </div>
     <div id="studentleave" class="card hidden">
       <h2>學員請假</h2>
@@ -744,7 +755,19 @@
       document.getElementById('btnReloadStudents').addEventListener('click', () => loadStudents());
       document.getElementById('btnSearchSchedule').addEventListener('click', () => loadCoachSchedule());
       document.getElementById('btnSearchRevenue').addEventListener('click', () => loadRevenue(document.getElementById('revenueFrom').value, document.getElementById('revenueTo').value));
-      // 影片檔案選擇 & 預覽
+      // 影片管理
+      document.getElementById('videoStudentFilter').addEventListener('change', () => loadVideos());
+      document.getElementById('btnShowVideoForm').addEventListener('click', () => {
+        document.getElementById('videoForm').style.display = 'block';
+        document.getElementById('btnShowVideoForm').style.display = 'none';
+      });
+      document.getElementById('btnCancelVideoForm').addEventListener('click', () => {
+        document.getElementById('videoForm').style.display = 'none';
+        document.getElementById('btnShowVideoForm').style.display = 'block';
+      });
+      document.getElementById('videoShareMultiple').addEventListener('change', (e) => {
+        document.getElementById('videoExtraStudents').style.display = e.target.checked ? 'block' : 'none';
+      });
       document.getElementById('videoFile').addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (file) {
@@ -764,7 +787,9 @@
         const title = document.getElementById('videoTitle').value.trim();
         const file = document.getElementById('videoFile').files[0];
         const description = document.getElementById('videoDesc').value.trim();
-        const studentIds = [...document.querySelectorAll('.video-student-cb:checked')].map(cb => cb.value);
+        const primaryStudent = document.getElementById('videoStudentFilter').value;
+        const extraIds = [...document.querySelectorAll('.video-extra-cb:checked')].map(cb => cb.value);
+        const studentIds = primaryStudent ? [primaryStudent, ...extraIds] : extraIds;
         if (!title || !file) { showToast('請填寫標題並選擇影片', 'error'); return; }
 
         const btn = document.getElementById('btnAddVideo');
@@ -776,7 +801,6 @@
         progressDiv.style.display = 'block';
 
         try {
-          // Step 1: 取得 signed upload URL
           progressText.textContent = '準備上傳...';
           const urlRes = await fetch(`${API_URL}/api/liff/video-upload-url`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -785,7 +809,6 @@
           const { uploadUrl, storagePath } = await urlRes.json();
           if (!uploadUrl) throw new Error('無法取得上傳網址');
 
-          // Step 2: 上傳影片到 Storage（用 XHR 追蹤進度）
           await new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
             xhr.open('PUT', uploadUrl);
@@ -802,7 +825,6 @@
             xhr.send(file);
           });
 
-          // Step 3: 儲存影片資訊
           progressText.textContent = '儲存中...';
           const res = await fetch(`${API_URL}/api/liff/video`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -817,12 +839,15 @@
             document.getElementById('videoFileLabel').style.display = 'block';
             document.getElementById('videoPreviewPlayer').src = '';
             document.getElementById('videoDesc').value = '';
-            document.querySelectorAll('.video-student-cb:checked').forEach(cb => cb.checked = false);
+            document.getElementById('videoShareMultiple').checked = false;
+            document.getElementById('videoExtraStudents').style.display = 'none';
+            document.getElementById('videoForm').style.display = 'none';
+            document.getElementById('btnShowVideoForm').style.display = 'block';
             loadVideos();
           } else { showToast(data.error || '新增失敗', 'error'); }
         } catch (e) { showToast(e.message || '上傳失敗', 'error'); }
         btn.disabled = false;
-        btn.textContent = '新增影片';
+        btn.textContent = '上傳';
         progressDiv.style.display = 'none';
         progressBar.style.width = '0%';
       });
@@ -1094,29 +1119,55 @@
     }
 
     async function loadVideos() {
+      const filterSel = document.getElementById('videoStudentFilter');
       const listDiv = document.getElementById('videoList');
-      const cbDiv = document.getElementById('videoStudentCheckboxes');
-      listDiv.innerHTML = '<p class="muted">載入中...</p>';
-      // 載入學員 checkbox
-      try {
-        const sRes = await fetch(`${API_URL}/api/liff/students?userId=${encodeURIComponent(userId)}`);
-        const { students } = await sRes.json();
-        cbDiv.innerHTML = (students || []).map(s => {
-          const label = s.alias || s.displayName || s.lineUserId;
-          return `<label style="display:block;padding:4px 0;font-size:14px;"><input type="checkbox" class="video-student-cb" value="${s.lineUserId}" style="width:auto;margin-right:6px;">${label}</label>`;
-        }).join('');
-      } catch (e) {
-        cbDiv.innerHTML = '<p class="muted">學員載入失敗</p>';
+      const addSection = document.getElementById('videoAddSection');
+
+      // 第一次進入：載入學員選單
+      if (filterSel.options.length <= 1) {
+        try {
+          const sRes = await fetch(`${API_URL}/api/liff/students?userId=${encodeURIComponent(userId)}`);
+          const { students } = await sRes.json();
+          filterSel._students = students || [];
+          filterSel.innerHTML = '<option value="">請選擇學員</option>' +
+            (students || []).map(s => {
+              const label = s.alias || s.displayName || s.lineUserId;
+              return `<option value="${s.lineUserId}">${label}</option>`;
+            }).join('');
+        } catch (e) { }
       }
-      // 載入影片列表
+
+      const selectedId = filterSel.value;
+      if (!selectedId) {
+        listDiv.innerHTML = '<p class="muted">請選擇學員以查看影片。</p>';
+        addSection.style.display = 'none';
+        return;
+      }
+
+      // 更新「其他學員」checkbox（排除已選學員）
+      const extraDiv = document.getElementById('videoExtraStudents');
+      const allStudents = filterSel._students || [];
+      extraDiv.innerHTML = allStudents
+        .filter(s => s.lineUserId !== selectedId)
+        .map(s => {
+          const label = s.alias || s.displayName || s.lineUserId;
+          return `<label style="display:block;padding:4px 0;"><input type="checkbox" class="video-extra-cb" value="${s.lineUserId}" style="width:auto;margin-right:6px;">${label}</label>`;
+        }).join('');
+
+      addSection.style.display = 'block';
+      listDiv.innerHTML = '<p class="muted">載入中...</p>';
+
       try {
         const res = await fetch(`${API_URL}/api/liff/videos?userId=${encodeURIComponent(userId)}`);
         const { videos } = await res.json();
-        if (!videos || !videos.length) {
-          listDiv.innerHTML = '<p class="muted">尚無影片。</p>';
+        const filtered = (videos || []).filter(v =>
+          !v.studentIds || !v.studentIds.length || v.studentIds.includes(selectedId)
+        );
+        if (!filtered.length) {
+          listDiv.innerHTML = '<p class="muted">此學員尚無影片。</p>';
           return;
         }
-        listDiv.innerHTML = videos.map(v => {
+        listDiv.innerHTML = filtered.map(v => {
           let embed = '';
           if (v.videoUrl) {
             embed = `<video src="${v.videoUrl}" style="width:100%;border-radius:8px;margin:8px 0;max-height:300px;" controls preload="metadata"></video>`;
@@ -1124,7 +1175,7 @@
             const ytId = extractYoutubeId(v.youtubeUrl);
             embed = ytId ? `<div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;border-radius:8px;margin:8px 0;"><iframe src="https://www.youtube.com/embed/${ytId}" style="position:absolute;top:0;left:0;width:100%;height:100%;border:none;" allowfullscreen></iframe></div>` : `<a href="${v.youtubeUrl}" target="_blank" style="color:#1976d2;">開啟影片</a>`;
           }
-          const studentNames = (v.studentIds || []).length ? `指定：${v.studentIds.length} 位學員` : '未指定學員';
+          const sharedWith = (v.studentIds || []).length > 1 ? `<span style="font-size:11px;color:#888;">共享給 ${v.studentIds.length} 位學員</span>` : '';
           return `<div class="student-card" style="margin-bottom:12px;">
             <div style="display:flex;justify-content:space-between;align-items:center;">
               <strong>${v.title || '未命名'}</strong>
@@ -1132,7 +1183,7 @@
             </div>
             ${v.description ? `<div class="muted" style="margin:4px 0;">${v.description}</div>` : ''}
             ${embed}
-            <div class="muted" style="font-size:12px;">${studentNames}</div>
+            ${sharedWith}
           </div>`;
         }).join('');
       } catch (e) {
