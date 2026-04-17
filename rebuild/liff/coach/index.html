@@ -8,7 +8,7 @@
   <title>高爾夫預約</title>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script>
-    window.APP_VERSION = '20260413-220238';
+    window.APP_VERSION = '20260417-165656';
     (function forceLatestVersion() {
       try {
         const url = new URL(window.location.href);
@@ -131,8 +131,10 @@
       <select id="addStudentSelect"><option value="">請選擇學員</option></select>
       <input type="number" id="addAmount" placeholder="堂數" min="1">
       <input type="text" id="addRealName" placeholder="本名（用於核銷）">
-      <label for="addStartDate" style="font-size:13px;color:#888;margin-bottom:2px;display:block;">起始日期（開課日）</label>
-      <input type="date" id="addStartDate" placeholder="起始日期">
+      <div style="position:relative;">
+        <span id="addStartDatePlaceholder" style="position:absolute;top:50%;left:14px;transform:translateY(-50%);color:#aaa;font-size:15px;pointer-events:none;">起始日期（開課日）</span>
+        <input type="date" id="addStartDate" style="color:transparent;" onfocus="this.style.color='';document.getElementById('addStartDatePlaceholder').style.display='none'" onblur="if(!this.value){this.style.color='transparent';document.getElementById('addStartDatePlaceholder').style.display='block'}">
+      </div>
       <input type="number" id="addPrice" placeholder="金額（NT$）">
       <input type="text" id="addNote" placeholder="方案名稱（選填）">
       <button id="btnAddCredit">開課</button>
