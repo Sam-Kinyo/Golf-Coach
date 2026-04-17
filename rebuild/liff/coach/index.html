@@ -8,7 +8,7 @@
   <title>高爾夫預約</title>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script>
-    window.APP_VERSION = '20260409-165101';
+    window.APP_VERSION = '20260413-220238';
     (function forceLatestVersion() {
       try {
         const url = new URL(window.location.href);
@@ -114,7 +114,9 @@
       <span class="tab" data-tab="students">學員明細</span>
       <span class="tab" data-tab="schedule">上課時間</span>
       <span class="tab" data-tab="leave">休假設定</span>
+      <span class="tab" data-tab="studentleave">學員請假</span>
       <span class="tab" data-tab="revenue">收入統計</span>
+      <span class="tab" data-tab="videos">影片管理</span>
     </div>
     <div id="deduct" class="card">
       <h2>扣課</h2>
@@ -129,6 +131,7 @@
       <select id="addStudentSelect"><option value="">請選擇學員</option></select>
       <input type="number" id="addAmount" placeholder="堂數" min="1">
       <input type="text" id="addRealName" placeholder="本名（用於核銷）">
+      <label for="addStartDate" style="font-size:13px;color:#888;margin-bottom:2px;display:block;">起始日期（開課日）</label>
       <input type="date" id="addStartDate" placeholder="起始日期">
       <input type="number" id="addPrice" placeholder="金額（NT$）">
       <input type="text" id="addNote" placeholder="方案名稱（選填）">
@@ -210,6 +213,68 @@
       <div style="font-size:14px; font-weight:700; color:#555; margin-bottom:8px;">學員明細</div>
       <div id="revenueStudentList"></div>
     </div>
+    <div id="videos" class="card hidden">
+      <h2>影片管理</h2>
+      <div class="field-hint">新增影片</div>
+      <input type="text" id="videoTitle" placeholder="影片標題">
+      <div class="field-hint">選擇影片檔案</div>
+      <label id="videoFileLabel" style="display:block;padding:12px;border:2px dashed #ccc;border-radius:8px;text-align:center;color:#888;cursor:pointer;margin-bottom:8px;font-size:14px;">
+        點擊選擇影片
+        <input type="file" id="videoFile" accept="video/*" style="display:none;">
+      </label>
+      <div id="videoPreview" style="display:none;margin-bottom:8px;">
+        <video id="videoPreviewPlayer" style="width:100%;border-radius:8px;max-height:200px;" controls></video>
+        <button type="button" id="btnClearVideo" style="font-size:12px;padding:4px 10px;margin-top:4px;background:#e74c3c;color:#fff;border:none;border-radius:4px;cursor:pointer;">移除影片</button>
+      </div>
+      <div id="videoUploadProgress" style="display:none;margin-bottom:8px;">
+        <div style="background:#eee;border-radius:4px;height:8px;overflow:hidden;">
+          <div id="videoProgressBar" style="height:100%;background:#4CAF50;width:0%;transition:width 0.3s;"></div>
+        </div>
+        <div id="videoProgressText" style="font-size:12px;color:#666;margin-top:4px;text-align:center;">上傳中...</div>
+      </div>
+      <input type="text" id="videoDesc" placeholder="備註說明（選填）">
+      <div class="field-hint">指定學員（可多選）</div>
+      <div id="videoStudentCheckboxes" style="max-height:200px; overflow-y:auto; border:1px solid #ddd; border-radius:8px; padding:8px; margin:8px 0;"></div>
+      <button id="btnAddVideo">新增影片</button>
+      <div class="field-hint" style="margin-top:16px;">影片列表</div>
+      <div id="videoList"></div>
+    </div>
+    <div id="studentleave" class="card hidden">
+      <h2>學員請假</h2>
+      <div class="field-hint">選擇學員</div>
+      <select id="slStudentSelect"><option value="">請選擇學員</option></select>
+
+      <div class="field-hint">請假來源</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <label style="flex:1;padding:8px;border:1px solid #ddd;border-radius:8px;cursor:pointer;text-align:center;font-size:14px;">
+          <input type="radio" name="slSource" value="booking" checked style="margin-right:4px;">從預約選擇
+        </label>
+        <label style="flex:1;padding:8px;border:1px solid #ddd;border-radius:8px;cursor:pointer;text-align:center;font-size:14px;">
+          <input type="radio" name="slSource" value="manual" style="margin-right:4px;">手動輸入
+        </label>
+      </div>
+
+      <div id="slBookingSection">
+        <div class="field-hint">選擇要請假的預約（會自動取消）</div>
+        <select id="slBookingSelect"><option value="">請先選擇學員</option></select>
+      </div>
+
+      <div id="slManualSection" style="display:none;">
+        <div class="field-hint">開始日期時間</div>
+        <input type="datetime-local" id="slStartAt">
+        <div class="field-hint">結束日期時間</div>
+        <input type="datetime-local" id="slEndAt">
+      </div>
+
+      <div class="field-hint">請假原因／備註</div>
+      <input type="text" id="slNote" placeholder="例如：感冒、工作忙">
+
+      <button id="btnAddStudentLeave">新增請假紀錄</button>
+
+      <div class="field-hint" style="margin-top:16px;">請假紀錄</div>
+      <div id="studentLeaveList"></div>
+    </div>
+
     <div id="leave" class="card hidden">
       <h2>休假設定</h2>
       <div class="field-hint">開始日期時間</div>
@@ -228,6 +293,7 @@
       <span class="tab active" data-tab="credits">我的堂數</span>
       <span class="tab" data-tab="bookings">我的預約</span>
       <span class="tab" data-tab="history">上課紀錄</span>
+      <span class="tab" data-tab="myvideos">我的影片</span>
       <span class="tab" data-tab="new">預約課程</span>
     </div>
     <div id="credits" class="card">
@@ -248,6 +314,10 @@
     <div id="history" class="card hidden">
       <h2>上課紀錄</h2>
       <div id="studentHistoryList"></div>
+    </div>
+    <div id="myvideos" class="card hidden">
+      <h2>我的影片</h2>
+      <div id="myVideoList"></div>
     </div>
     <div id="new" class="card hidden">
       <h2>預約課程</h2>
@@ -344,6 +414,7 @@
         isCoachUser = role === 'coach';
 
         document.getElementById('loading').classList.add('hidden');
+        const urlTab = new URLSearchParams(window.location.search).get('tab');
         if (isCoachUser) {
           document.getElementById('coachApp').classList.remove('hidden');
           loadStudents();
@@ -354,12 +425,27 @@
           initLeaveDateTime();
           loadLeaves();
           bindCoachEvents();
+          if (urlTab) {
+            document.querySelectorAll('#coachApp .tab').forEach(x => x.classList.remove('active'));
+            document.querySelectorAll('#deduct, #addcredit, #students, #schedule, #leave, #studentleave, #revenue, #videos').forEach(x => x.classList.add('hidden'));
+            const tabEl = document.querySelector(`#coachApp .tab[data-tab="${urlTab}"]`);
+            if (tabEl) { tabEl.classList.add('active'); document.getElementById(urlTab).classList.remove('hidden'); }
+            if (urlTab === 'videos') loadVideos();
+            if (urlTab === 'revenue') loadRevenue();
+          }
         } else {
           document.getElementById('studentApp').classList.remove('hidden');
           await loadBookingOptions();
           loadPackages();
           loadBookings();
           bindStudentEvents();
+          if (urlTab) {
+            document.querySelectorAll('#studentApp .tab').forEach(x => x.classList.remove('active'));
+            document.querySelectorAll('#credits, #bookings, #history, #myvideos, #new').forEach(x => x.classList.add('hidden'));
+            const tabEl = document.querySelector(`#studentApp .tab[data-tab="${urlTab}"]`);
+            if (tabEl) { tabEl.classList.add('active'); document.getElementById(urlTab).classList.remove('hidden'); }
+            if (urlTab === 'myvideos') loadMyVideos();
+          }
         }
       } catch (err) {
         document.getElementById('loading').innerHTML =
@@ -643,17 +729,101 @@
       document.querySelectorAll('#coachApp .tab').forEach(t => {
         t.addEventListener('click', () => {
           document.querySelectorAll('#coachApp .tab').forEach(x => x.classList.remove('active'));
-          document.querySelectorAll('#deduct, #addcredit, #students, #schedule, #leave, #revenue').forEach(x => x.classList.add('hidden'));
+          document.querySelectorAll('#deduct, #addcredit, #students, #schedule, #leave, #studentleave, #revenue, #videos').forEach(x => x.classList.add('hidden'));
           t.classList.add('active');
           document.getElementById(t.dataset.tab).classList.remove('hidden');
           if (t.dataset.tab === 'students') loadStudents();
           if (t.dataset.tab === 'schedule') { loadCoachSchedule(); loadFixedSchedules(); }
           if (t.dataset.tab === 'revenue') loadRevenue(document.getElementById('revenueFrom').value, document.getElementById('revenueTo').value);
+          if (t.dataset.tab === 'videos') loadVideos();
+          if (t.dataset.tab === 'studentleave') loadStudentLeaves();
         });
       });
       document.getElementById('btnReloadStudents').addEventListener('click', () => loadStudents());
       document.getElementById('btnSearchSchedule').addEventListener('click', () => loadCoachSchedule());
       document.getElementById('btnSearchRevenue').addEventListener('click', () => loadRevenue(document.getElementById('revenueFrom').value, document.getElementById('revenueTo').value));
+      // 影片檔案選擇 & 預覽
+      document.getElementById('videoFile').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          document.getElementById('videoFileLabel').style.display = 'none';
+          document.getElementById('videoPreview').style.display = 'block';
+          document.getElementById('videoPreviewPlayer').src = URL.createObjectURL(file);
+        }
+      });
+      document.getElementById('btnClearVideo').addEventListener('click', () => {
+        document.getElementById('videoFile').value = '';
+        document.getElementById('videoPreview').style.display = 'none';
+        document.getElementById('videoFileLabel').style.display = 'block';
+        document.getElementById('videoPreviewPlayer').src = '';
+      });
+
+      document.getElementById('btnAddVideo').addEventListener('click', async () => {
+        const title = document.getElementById('videoTitle').value.trim();
+        const file = document.getElementById('videoFile').files[0];
+        const description = document.getElementById('videoDesc').value.trim();
+        const studentIds = [...document.querySelectorAll('.video-student-cb:checked')].map(cb => cb.value);
+        if (!title || !file) { showToast('請填寫標題並選擇影片', 'error'); return; }
+
+        const btn = document.getElementById('btnAddVideo');
+        btn.disabled = true;
+        btn.textContent = '上傳中...';
+        const progressDiv = document.getElementById('videoUploadProgress');
+        const progressBar = document.getElementById('videoProgressBar');
+        const progressText = document.getElementById('videoProgressText');
+        progressDiv.style.display = 'block';
+
+        try {
+          // Step 1: 取得 signed upload URL
+          progressText.textContent = '準備上傳...';
+          const urlRes = await fetch(`${API_URL}/api/liff/video-upload-url`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ coachUserId: userId, fileName: file.name, contentType: file.type || 'video/mp4' })
+          });
+          const { uploadUrl, storagePath } = await urlRes.json();
+          if (!uploadUrl) throw new Error('無法取得上傳網址');
+
+          // Step 2: 上傳影片到 Storage（用 XHR 追蹤進度）
+          await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('PUT', uploadUrl);
+            xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
+            xhr.upload.onprogress = (e) => {
+              if (e.lengthComputable) {
+                const pct = Math.round(e.loaded / e.total * 100);
+                progressBar.style.width = pct + '%';
+                progressText.textContent = `上傳中 ${pct}%（${(e.loaded / 1024 / 1024).toFixed(1)} MB）`;
+              }
+            };
+            xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error('上傳失敗'));
+            xhr.onerror = () => reject(new Error('網路錯誤'));
+            xhr.send(file);
+          });
+
+          // Step 3: 儲存影片資訊
+          progressText.textContent = '儲存中...';
+          const res = await fetch(`${API_URL}/api/liff/video`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ coachUserId: userId, title, storagePath, description, studentIds })
+          });
+          const data = await res.json();
+          if (data.ok) {
+            showToast('影片已新增' + (studentIds.length ? `，已通知 ${studentIds.length} 位學員` : ''), 'success');
+            document.getElementById('videoTitle').value = '';
+            document.getElementById('videoFile').value = '';
+            document.getElementById('videoPreview').style.display = 'none';
+            document.getElementById('videoFileLabel').style.display = 'block';
+            document.getElementById('videoPreviewPlayer').src = '';
+            document.getElementById('videoDesc').value = '';
+            document.querySelectorAll('.video-student-cb:checked').forEach(cb => cb.checked = false);
+            loadVideos();
+          } else { showToast(data.error || '新增失敗', 'error'); }
+        } catch (e) { showToast(e.message || '上傳失敗', 'error'); }
+        btn.disabled = false;
+        btn.textContent = '新增影片';
+        progressDiv.style.display = 'none';
+        progressBar.style.width = '0%';
+      });
       document.getElementById('btnRevenueAll').addEventListener('click', () => { document.getElementById('revenueFrom').value = ''; document.getElementById('revenueTo').value = ''; loadRevenue(); });
       document.getElementById('btnAddFixed').addEventListener('click', async () => {
         const weekday = document.getElementById('fixedWeekday').value;
@@ -810,6 +980,67 @@
           document.getElementById('btnAddCredit').disabled = false;
         }
       });
+      // ===== 學員請假 事件 =====
+      document.getElementById('slStudentSelect').addEventListener('change', (e) => {
+        loadStudentBookingsForLeave(e.target.value);
+      });
+      document.querySelectorAll('input[name="slSource"]').forEach(r => {
+        r.addEventListener('change', (e) => {
+          const isBooking = e.target.value === 'booking';
+          document.getElementById('slBookingSection').style.display = isBooking ? 'block' : 'none';
+          document.getElementById('slManualSection').style.display = isBooking ? 'none' : 'block';
+        });
+      });
+      document.getElementById('btnAddStudentLeave').addEventListener('click', async () => {
+        const studentId = document.getElementById('slStudentSelect').value;
+        const source = document.querySelector('input[name="slSource"]:checked').value;
+        const note = document.getElementById('slNote').value.trim();
+        if (!studentId) { showToast('請選擇學員', 'error'); return; }
+
+        let payload = { coachUserId: userId, studentId, note };
+        if (source === 'booking') {
+          const sel = document.getElementById('slBookingSelect');
+          const bookingId = sel.value;
+          if (!bookingId) { showToast('請選擇要請假的預約', 'error'); return; }
+          const opt = sel.options[sel.selectedIndex];
+          payload.bookingId = bookingId;
+          payload.startDate = opt.dataset.date;
+          payload.endDate = opt.dataset.date;
+          payload.startTime = opt.dataset.start;
+          payload.endTime = opt.dataset.end;
+        } else {
+          const startAt = document.getElementById('slStartAt').value;
+          const endAt = document.getElementById('slEndAt').value;
+          if (!startAt || !endAt) { showToast('請選擇開始與結束時間', 'error'); return; }
+          const [startDate, startTime] = startAt.split('T');
+          const [endDate, endTime] = endAt.split('T');
+          payload.startDate = startDate;
+          payload.endDate = endDate;
+          payload.startTime = startTime;
+          payload.endTime = endTime;
+        }
+
+        const btn = document.getElementById('btnAddStudentLeave');
+        btn.disabled = true;
+        try {
+          const res = await fetch(`${API_URL}/api/liff/student-leave`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const data = await res.json();
+          if (data.ok) {
+            showToast('請假已記錄，已通知學員', 'success');
+            document.getElementById('slStudentSelect').value = '';
+            document.getElementById('slBookingSelect').innerHTML = '<option value="">請先選擇學員</option>';
+            document.getElementById('slStartAt').value = '';
+            document.getElementById('slEndAt').value = '';
+            document.getElementById('slNote').value = '';
+            loadStudentLeaves();
+          } else { showToast(data.error || '新增失敗', 'error'); }
+        } catch (e) { showToast('連線失敗', 'error'); }
+        btn.disabled = false;
+      });
+
       document.getElementById('btnLeave').addEventListener('click', async () => {
         const startAt = document.getElementById('leaveStartAt').value;
         const endAt = document.getElementById('leaveEndAt').value;
@@ -853,6 +1084,175 @@
           btn.textContent = '取消';
         }
       });
+    }
+
+    function extractYoutubeId(url) {
+      const m = (url || '').match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{11})/);
+      return m ? m[1] : null;
+    }
+
+    async function loadVideos() {
+      const listDiv = document.getElementById('videoList');
+      const cbDiv = document.getElementById('videoStudentCheckboxes');
+      listDiv.innerHTML = '<p class="muted">載入中...</p>';
+      // 載入學員 checkbox
+      try {
+        const sRes = await fetch(`${API_URL}/api/liff/students?userId=${encodeURIComponent(userId)}`);
+        const { students } = await sRes.json();
+        cbDiv.innerHTML = (students || []).map(s => {
+          const label = s.alias || s.displayName || s.lineUserId;
+          return `<label style="display:block;padding:4px 0;font-size:14px;"><input type="checkbox" class="video-student-cb" value="${s.lineUserId}" style="width:auto;margin-right:6px;">${label}</label>`;
+        }).join('');
+      } catch (e) {
+        cbDiv.innerHTML = '<p class="muted">學員載入失敗</p>';
+      }
+      // 載入影片列表
+      try {
+        const res = await fetch(`${API_URL}/api/liff/videos?userId=${encodeURIComponent(userId)}`);
+        const { videos } = await res.json();
+        if (!videos || !videos.length) {
+          listDiv.innerHTML = '<p class="muted">尚無影片。</p>';
+          return;
+        }
+        listDiv.innerHTML = videos.map(v => {
+          let embed = '';
+          if (v.videoUrl) {
+            embed = `<video src="${v.videoUrl}" style="width:100%;border-radius:8px;margin:8px 0;max-height:300px;" controls preload="metadata"></video>`;
+          } else {
+            const ytId = extractYoutubeId(v.youtubeUrl);
+            embed = ytId ? `<div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;border-radius:8px;margin:8px 0;"><iframe src="https://www.youtube.com/embed/${ytId}" style="position:absolute;top:0;left:0;width:100%;height:100%;border:none;" allowfullscreen></iframe></div>` : `<a href="${v.youtubeUrl}" target="_blank" style="color:#1976d2;">開啟影片</a>`;
+          }
+          const studentNames = (v.studentIds || []).length ? `指定：${v.studentIds.length} 位學員` : '未指定學員';
+          return `<div class="student-card" style="margin-bottom:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <strong>${v.title || '未命名'}</strong>
+              <button type="button" class="btn-danger" style="font-size:11px;padding:3px 8px;border-radius:4px;" onclick="deleteVideo('${v.id}')">刪除</button>
+            </div>
+            ${v.description ? `<div class="muted" style="margin:4px 0;">${v.description}</div>` : ''}
+            ${embed}
+            <div class="muted" style="font-size:12px;">${studentNames}</div>
+          </div>`;
+        }).join('');
+      } catch (e) {
+        listDiv.innerHTML = '<p class="muted">影片載入失敗</p>';
+      }
+    }
+
+    async function deleteVideo(videoId) {
+      if (!confirm('確定要刪除此影片嗎？')) return;
+      try {
+        const res = await fetch(`${API_URL}/api/liff/video?userId=${encodeURIComponent(userId)}&id=${encodeURIComponent(videoId)}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.ok) { showToast('影片已刪除', 'success'); loadVideos(); }
+        else showToast(data.error || '刪除失敗', 'error');
+      } catch (e) { showToast('連線失敗', 'error'); }
+    }
+
+    // ========== 學員請假 ==========
+    async function loadStudentLeaves() {
+      const studentSel = document.getElementById('slStudentSelect');
+      const listDiv = document.getElementById('studentLeaveList');
+      listDiv.innerHTML = '<p class="muted">載入中...</p>';
+
+      // 載入學員下拉選單（只載一次）
+      if (studentSel.options.length <= 1) {
+        try {
+          const sRes = await fetch(`${API_URL}/api/liff/students?userId=${encodeURIComponent(userId)}`);
+          const { students } = await sRes.json();
+          studentSel.innerHTML = '<option value="">請選擇學員</option>' + (students || []).map(s => {
+            const label = s.alias || s.displayName || s.lineUserId;
+            return `<option value="${s.lineUserId}">${label}</option>`;
+          }).join('');
+        } catch (e) { /* ignore */ }
+      }
+
+      // 載入請假列表
+      try {
+        const res = await fetch(`${API_URL}/api/liff/student-leaves?userId=${encodeURIComponent(userId)}`);
+        const { leaves } = await res.json();
+        if (!leaves || !leaves.length) {
+          listDiv.innerHTML = '<p class="muted">尚無請假紀錄。</p>';
+          return;
+        }
+        // 取得學員名稱對照
+        const sRes = await fetch(`${API_URL}/api/liff/students?userId=${encodeURIComponent(userId)}`);
+        const { students } = await sRes.json();
+        const nameMap = {};
+        (students || []).forEach(s => { nameMap[s.lineUserId] = s.alias || s.displayName || s.lineUserId; });
+
+        listDiv.innerHTML = leaves.map(l => {
+          const name = nameMap[l.studentId] || '未知學員';
+          const dateRange = l.startDate === l.endDate
+            ? `${l.startDate}${l.startTime ? ` ${l.startTime}` : ''}${l.endTime ? ` - ${l.endTime}` : ''}`
+            : `${l.startDate}${l.startTime ? ` ${l.startTime}` : ''} ～ ${l.endDate}${l.endTime ? ` ${l.endTime}` : ''}`;
+          return `<div class="student-card" style="margin-bottom:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <strong>${name}</strong>
+              <button type="button" class="btn-danger" style="font-size:11px;padding:3px 8px;border-radius:4px;" onclick="deleteStudentLeave('${l.id}')">刪除</button>
+            </div>
+            <div style="margin:4px 0;font-size:14px;">📅 ${dateRange}</div>
+            ${l.note ? `<div class="muted" style="margin:4px 0;">📌 ${l.note}</div>` : ''}
+            ${l.bookingId ? `<div class="muted" style="font-size:12px;">已連動取消預約</div>` : ''}
+          </div>`;
+        }).join('');
+      } catch (e) {
+        listDiv.innerHTML = '<p class="muted">請假紀錄載入失敗</p>';
+      }
+    }
+
+    async function loadStudentBookingsForLeave(studentId) {
+      const sel = document.getElementById('slBookingSelect');
+      if (!studentId) { sel.innerHTML = '<option value="">請先選擇學員</option>'; return; }
+      sel.innerHTML = '<option value="">載入中...</option>';
+      try {
+        const res = await fetch(`${API_URL}/api/liff/my-bookings?userId=${encodeURIComponent(studentId)}`);
+        const { bookings } = await res.json();
+        const future = (bookings || []).filter(b => ['pending', 'approved'].includes(b.status));
+        if (!future.length) { sel.innerHTML = '<option value="">該學員目前無有效預約</option>'; return; }
+        sel.innerHTML = '<option value="">請選擇預約</option>' + future.map(b => {
+          const label = `${b.bookingDate} ${b.startTime} ${b.service}`;
+          return `<option value="${b.id}" data-date="${b.bookingDate}" data-start="${b.startTime}" data-end="${b.endTime}">${label}</option>`;
+        }).join('');
+      } catch (e) { sel.innerHTML = '<option value="">載入失敗</option>'; }
+    }
+
+    async function deleteStudentLeave(leaveId) {
+      if (!confirm('確定要刪除這筆請假紀錄嗎？')) return;
+      try {
+        const res = await fetch(`${API_URL}/api/liff/student-leave?userId=${encodeURIComponent(userId)}&id=${encodeURIComponent(leaveId)}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.ok) { showToast('請假紀錄已刪除', 'success'); loadStudentLeaves(); }
+        else showToast(data.error || '刪除失敗', 'error');
+      } catch (e) { showToast('連線失敗', 'error'); }
+    }
+
+    async function loadMyVideos() {
+      const listDiv = document.getElementById('myVideoList');
+      listDiv.innerHTML = '<p class="muted">載入中...</p>';
+      try {
+        const res = await fetch(`${API_URL}/api/liff/my-videos?userId=${encodeURIComponent(userId)}`);
+        const { videos } = await res.json();
+        if (!videos || !videos.length) {
+          listDiv.innerHTML = '<p class="muted">目前沒有教練分享的影片。</p>';
+          return;
+        }
+        listDiv.innerHTML = videos.map(v => {
+          let embed = '';
+          if (v.videoUrl) {
+            embed = `<video src="${v.videoUrl}" style="width:100%;border-radius:8px;margin:8px 0;max-height:300px;" controls preload="metadata"></video>`;
+          } else {
+            const ytId = extractYoutubeId(v.youtubeUrl);
+            embed = ytId ? `<div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;border-radius:8px;margin:8px 0;"><iframe src="https://www.youtube.com/embed/${ytId}" style="position:absolute;top:0;left:0;width:100%;height:100%;border:none;" allowfullscreen></iframe></div>` : `<a href="${v.youtubeUrl}" target="_blank" style="color:#1976d2;">開啟影片</a>`;
+          }
+          return `<div class="student-card" style="margin-bottom:12px;">
+            <strong>${v.title || '未命名'}</strong>
+            ${v.description ? `<div class="muted" style="margin:4px 0;">${v.description}</div>` : ''}
+            ${embed}
+          </div>`;
+        }).join('');
+      } catch (e) {
+        listDiv.innerHTML = '<p class="muted">影片載入失敗</p>';
+      }
     }
 
     async function loadRevenue(fromDate, toDate) {
@@ -1042,11 +1442,12 @@
       document.querySelectorAll('#studentApp .tab').forEach(t => {
         t.addEventListener('click', () => {
           document.querySelectorAll('#studentApp .tab').forEach(x => x.classList.remove('active'));
-          document.querySelectorAll('#credits, #bookings, #history, #new').forEach(x => x.classList.add('hidden'));
+          document.querySelectorAll('#credits, #bookings, #history, #myvideos, #new').forEach(x => x.classList.add('hidden'));
           t.classList.add('active');
           document.getElementById(t.dataset.tab).classList.remove('hidden');
           if (t.dataset.tab === 'new') loadAvailableSlots();
           if (t.dataset.tab === 'history') loadStudentHistory(userId, 'studentHistoryList');
+          if (t.dataset.tab === 'myvideos') loadMyVideos();
         });
       });
       document.getElementById('bookingDate').addEventListener('change', loadAvailableSlots);
