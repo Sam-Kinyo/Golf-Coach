@@ -218,7 +218,7 @@ async function handleCoachMessage(userId: string, text: string, replyToken: stri
   }
 }
 
-const pendingNameSet = new Set<string>();
+export const pendingNameSet = new Set<string>();
 
 async function handleStudentMessage(userId: string, text: string, replyToken: string): Promise<void> {
   // 如果正在等待輸入本名

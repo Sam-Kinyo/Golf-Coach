@@ -93,8 +93,8 @@ def draw_menu(labels, output_path: Path):
 
 def main():
     root = Path(__file__).resolve().parent
-    draw_menu(["教練後台", "查詢今日", "查詢明日", "使用教學"], root / "richmenu-coach.png")
-    draw_menu(["學員專區", "我的預約", "我的堂數", "使用教學"], root / "richmenu-student.png")
+    draw_menu(["教練後台", "查詢今日", "查詢明日", "影片管理"], root / "richmenu-coach.png")
+    draw_menu(["學員專區", "我的預約", "我的堂數", "我的影片"], root / "richmenu-student.png")
     print("Rich menu images generated.")
 
 

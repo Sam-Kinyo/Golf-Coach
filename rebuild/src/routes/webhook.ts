@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { WebhookEvent } from '@line/bot-sdk';
 import { parseWebhook, isCoach } from '../services/line';
 import { getOrCreateUser } from '../services/user';
-import { handleWebhookEvent } from '../handlers/webhook';
+import { handleWebhookEvent, pendingNameSet } from '../handlers/webhook';
 import { pushMessage } from '../services/line';
 
 interface LineWebhookPayload {
@@ -33,7 +33,13 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
           await handleWebhookEvent(e, reply);
         } else if (e.type === 'follow') {
           const userId = (e.source as any).userId;
-          if (userId) await getOrCreateUser(userId);
+          if (userId) {
+            await getOrCreateUser(userId);
+            if (!isCoach(userId)) {
+              pendingNameSet.add(userId);
+              await pushMessage(userId, [{ type: 'text', text: '👋 您好！第一次使用請先輸入您的本名（中文全名），方便教練辨識您。' }]);
+            }
+          }
         }
       }
       return reply.send('OK');

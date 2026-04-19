@@ -1,0 +1,30 @@
+# Secrets
+.env
+*.env
+serviceAccountKey.json
+firebase-adminsdk*.json
+firebase-key.json
+firebase_auth.json
+credentials.json
+client_secret.json
+*secret*.json
+
+# Dependencies
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Claude worktrees
+.claude/worktrees/
+
+# Build
+dist/
+build/
+.next/
+
+# OS
+.DS_Store
+Thumbs.db

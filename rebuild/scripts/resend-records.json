@@ -1,0 +1,41 @@
+﻿{
+    "object":  "domain",
+    "id":  "da0a05fc-aef0-43a0-9e4c-54578049b260",
+    "name":  "chengzhu.co",
+    "created_at":  "2026-04-18 15:33:59.985918+00",
+    "status":  "not_started",
+    "capabilities":  {
+                         "sending":  "enabled",
+                         "receiving":  "disabled"
+                     },
+    "records":  [
+                    {
+                        "record":  "DKIM",
+                        "name":  "resend._domainkey",
+                        "value":  "p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCwm5nEcQeKvGKUzRHjx3r7RFeGi+a8jfPe7L1tOGiKexETyS6LEGyyy1cvs+XQb/f7K0flxzrCRL18uEGciM3CHaKJxsjZELQC6aKbB8Irr5N7Ct4glaxabZ44/594KSZj9kOYrq9txv6ZItkxBH23JFftIeJT4Du0BVqAVSUiSQIDAQAB",
+                        "type":  "TXT",
+                        "status":  "not_started",
+                        "ttl":  "Auto"
+                    },
+                    {
+                        "record":  "SPF",
+                        "name":  "send",
+                        "type":  "MX",
+                        "ttl":  "Auto",
+                        "status":  "not_started",
+                        "value":  "feedback-smtp.us-east-1.amazonses.com",
+                        "priority":  10
+                    },
+                    {
+                        "record":  "SPF",
+                        "name":  "send",
+                        "value":  "v=spf1 include:amazonses.com ~all",
+                        "type":  "TXT",
+                        "ttl":  "Auto",
+                        "status":  "not_started"
+                    }
+                ],
+    "region":  "us-east-1",
+    "open_tracking":  false,
+    "click_tracking":  false
+}

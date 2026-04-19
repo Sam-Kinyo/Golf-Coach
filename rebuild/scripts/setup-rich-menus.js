@@ -111,7 +111,7 @@ async function main() {
       { type: 'uri', uri: coachUrl },
       { type: 'message', text: '查詢今日' },
       { type: 'message', text: '查詢明日' },
-      { type: 'message', text: '使用教學' },
+      { type: 'uri', uri: coachUrl + '?tab=videos' },
     ]
   );
   const studentMenuBody = createFourButtonRichMenu(
@@ -121,7 +121,7 @@ async function main() {
       { type: 'uri', uri: studentUrl },
       { type: 'message', text: '我的預約' },
       { type: 'message', text: '我的堂數' },
-      { type: 'message', text: '使用教學' },
+      { type: 'uri', uri: studentUrl + '?tab=myvideos' },
     ]
   );
 
